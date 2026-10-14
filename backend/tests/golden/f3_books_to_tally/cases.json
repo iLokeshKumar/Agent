@@ -1,0 +1,56 @@
+[
+  {
+    "name": "valid_date_range_accepted",
+    "payload": {
+      "start_date": "2026-09-01",
+      "end_date": "2026-09-09",
+      "entity": "YEXIS-EL",
+      "dry_run": true
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["staged_count"],
+      "actions.contains": "staging_completed"
+    }
+  },
+  {
+    "name": "missing_start_date_fails",
+    "payload": {
+      "end_date": "2026-09-09",
+      "entity": "YEXIS-EL"
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "missing_end_date_fails",
+    "payload": {
+      "start_date": "2026-09-01",
+      "entity": "YEXIS-EL"
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "empty_payload_rejected",
+    "payload": {},
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "single_day_range_valid",
+    "payload": {
+      "start_date": "2026-09-09",
+      "end_date": "2026-09-09",
+      "entity": "YEXIS-EL",
+      "dry_run": true
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["staged_count"]
+    }
+  }
+]

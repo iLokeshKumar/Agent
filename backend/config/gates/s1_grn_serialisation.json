@@ -1,0 +1,16 @@
+{
+  "agent_dir": "s1_grn_serialisation",
+  "agent_code": "S1",
+  "business_owner_signoff": {
+    "signed_by": "Stores Manager — Yexis Electronics",
+    "signed_at": "2026-09-09T18:00:00+05:30",
+    "uat_evidence_ref": "docs/phase1-dry-run-uat-2026-09-09.md",
+    "scope": "Serial number capture and GRN validation — dry-run UAT 10/10 cases passed"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-09T17:00:00+05:30",
+    "procedure": "Set dry_run=true via POST /lanes/S1/dry-run {enabled:true}; serial_registry writes are suppressed.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

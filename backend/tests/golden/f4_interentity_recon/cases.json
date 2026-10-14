@@ -1,0 +1,56 @@
+[
+  {
+    "id": "F4-G-001",
+    "description": "Valid match action — both entities provided",
+    "payload": {
+      "entity_from": "YEXIS-EL",
+      "entity_to": "YEXIS-SL",
+      "action": "match"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["summary", "suggestions", "unmatched_from"]
+  },
+  {
+    "id": "F4-G-002",
+    "description": "Report action returns items by status",
+    "payload": {
+      "entity_from": "YEXIS-EL",
+      "entity_to": "YEXIS-SL",
+      "action": "report"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["by_status", "items"]
+  },
+  {
+    "id": "F4-G-003",
+    "description": "Same entity on both sides — validation error",
+    "payload": {
+      "entity_from": "YEXIS-EL",
+      "entity_to": "YEXIS-EL",
+      "action": "match"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "different"
+  },
+  {
+    "id": "F4-G-004",
+    "description": "Missing entity_from — validation error",
+    "payload": {
+      "entity_to": "YEXIS-SL",
+      "action": "match"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "entity_from"
+  },
+  {
+    "id": "F4-G-005",
+    "description": "Invalid action — validation error",
+    "payload": {
+      "entity_from": "YEXIS-EL",
+      "entity_to": "YEXIS-SL",
+      "action": "delete_all"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "action"
+  }
+]

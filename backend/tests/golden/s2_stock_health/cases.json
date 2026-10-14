@@ -1,0 +1,52 @@
+[
+  {
+    "name": "stale_stock_flags_ageing_review",
+    "payload": {
+      "skus": [
+        {"sku_ref": "SKU-AGE", "branch": "TN",
+         "ages_days": [10, 70, 80, 95],
+         "weekly_units": [2, 2, 2],
+         "eol": false}
+      ]
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["health_rows", "summary", "brief"],
+      "actions.contains": ["scored_stock_health"]
+    }
+  },
+  {
+    "name": "eol_stock_demands_clearance_push",
+    "payload": {
+      "skus": [
+        {"sku_ref": "SKU-EOL", "branch": "KL",
+         "ages_days": [5, 6],
+         "weekly_units": [10, 10, 10],
+         "eol": true}
+      ]
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["health_rows", "brief"]
+    }
+  },
+  {
+    "name": "empty_payload_rejected_by_contract",
+    "payload": {},
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "negative_age_rejected_by_contract",
+    "payload": {
+      "skus": [
+        {"sku_ref": "SKU-BAD", "ages_days": [-3],
+         "weekly_units": [1, 1]}
+      ]
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "agent_dir": "c1_indent_planning",
+  "agent_code": "C1",
+  "business_owner_signoff": {
+    "signed_by": "SCM Manager — Yexis Electronics",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "Inventory reorder trigger analysis and indent drafting — UAT 5/5 cases passed",
+    "uat_evidence_ref": "UAT-C1-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set dry_run=true via POST /lanes/C1/dry-run {enabled:true}; indent drafts are generated but not written to purchase_indents table or submitted for approval.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

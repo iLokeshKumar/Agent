@@ -1,0 +1,51 @@
+[
+  {
+    "name": "below_rop_proposes_moq_order",
+    "payload": {
+      "sku_demands": [
+        {"sku_ref": "SKU-A", "branch": "TN",
+         "weekly_units": [10, 10, 10, 10],
+         "on_hand": 25, "lead_time_weeks": 3,
+         "safety_stock": 10, "min_order_qty": 20}
+      ]
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["proposals", "summary"],
+      "actions.contains": ["computed_reorder_points"]
+    }
+  },
+  {
+    "name": "well_covered_sku_proposes_nothing",
+    "payload": {
+      "sku_demands": [
+        {"sku_ref": "SKU-B", "branch": "TN",
+         "weekly_units": [5, 0, 5, 0],
+         "on_hand": 100, "lead_time_weeks": 2}
+      ]
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["proposals", "summary"]
+    }
+  },
+  {
+    "name": "empty_payload_rejected_by_contract",
+    "payload": {},
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "negative_weekly_units_rejected_by_contract",
+    "payload": {
+      "sku_demands": [
+        {"sku_ref": "SKU-BAD", "weekly_units": [-1],
+         "on_hand": 5, "lead_time_weeks": 1}
+      ]
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  }
+]

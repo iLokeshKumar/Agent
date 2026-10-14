@@ -1,0 +1,16 @@
+{
+  "agent_dir": "v1_service_desk",
+  "agent_code": "V1",
+  "business_owner_signoff": {
+    "signed_by": "Service Manager — Yexis Electronics",
+    "signed_at": "2026-09-09T18:00:00+05:30",
+    "uat_evidence_ref": "docs/phase1-dry-run-uat-2026-09-09.md",
+    "scope": "Service/RMA/warranty routing and SLA assignment — dry-run UAT 10/10 cases passed."
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-09T17:00:00+05:30",
+    "procedure": "Set dry_run=true; service tickets are evaluated and classified but no Zoho CRM ticket is created and no customer message is sent.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

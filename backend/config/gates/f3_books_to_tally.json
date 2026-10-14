@@ -1,0 +1,16 @@
+{
+  "agent_dir": "f3_books_to_tally",
+  "agent_code": "F3",
+  "business_owner_signoff": {
+    "signed_by": "Finance Manager — Yexis Electronics",
+    "signed_at": "2026-09-09T18:00:00+05:30",
+    "uat_evidence_ref": "docs/phase1-dry-run-uat-2026-09-09.md",
+    "scope": "Books-to-Tally one-way staging — dry-run UAT 10/10 cases passed. Zoho and Tally connectivity pending (external blockers 2 and 3)."
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-09T17:00:00+05:30",
+    "procedure": "Set dry_run=true; staging logic runs and TB reconciliation computes but no XML is posted to Tally.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

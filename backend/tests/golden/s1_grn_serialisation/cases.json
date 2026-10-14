@@ -1,0 +1,68 @@
+[
+  {
+    "name": "valid_single_serial_grn",
+    "payload": {
+      "items": [
+        {
+          "item": "Samsung QLED 55",
+          "serial_numbers": ["SN-KR-20260901-001"],
+          "received_quantity": 1
+        }
+      ],
+      "po_number": "PO-2026-001",
+      "vendor": "Samsung India Electronics"
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["grn_id"],
+      "actions.contains": "grn_created"
+    }
+  },
+  {
+    "name": "multi_serial_grn",
+    "payload": {
+      "items": [
+        {
+          "item": "Samsung Frame 65",
+          "serial_numbers": ["SN-KR-20260901-002", "SN-KR-20260901-003"],
+          "received_quantity": 2
+        }
+      ],
+      "po_number": "PO-2026-002"
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["grn_id"]
+    }
+  },
+  {
+    "name": "missing_items_fails_validation",
+    "payload": {
+      "po_number": "PO-2026-003"
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "negative_quantity_fails_validation",
+    "payload": {
+      "items": [
+        {
+          "item": "Samsung QLED 55",
+          "received_quantity": -1
+        }
+      ]
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "empty_payload_rejected",
+    "payload": {},
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  }
+]

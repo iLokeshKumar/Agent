@@ -1,0 +1,31 @@
+[
+  {
+    "name": "single_overdue_invoice_drafts_reminder",
+    "payload": {
+      "invoices": [
+        {
+          "invoice_number": "INV-9",
+          "customer": "Dealer One",
+          "outstanding_amount": 5000,
+          "due_date": "2026-08-01"
+        }
+      ]
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": [
+        "processed_invoices",
+        "summary"
+      ]
+    }
+  },
+  {
+    "name": "empty_cohort_is_rejected_by_contract",
+    "payload": {
+      "invoices": []
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  }
+]

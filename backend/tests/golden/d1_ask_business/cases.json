@@ -1,0 +1,54 @@
+[
+  {
+    "name": "sales_summary_query",
+    "payload": {
+      "query_type": "sales_summary",
+      "period": "this_month",
+      "entity": "YEXIS-EL"
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["report"],
+      "actions.contains": "executed_query:sales_summary"
+    }
+  },
+  {
+    "name": "receivables_aging_query",
+    "payload": {
+      "query_type": "receivables_aging",
+      "period": "this_month"
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["report"]
+    }
+  },
+  {
+    "name": "mart_dealer_outstanding_query",
+    "payload": {
+      "query_type": "dealer_outstanding",
+      "entity": "YEXIS-EL"
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["report"],
+      "actions.contains": "executed_query:dealer_outstanding"
+    }
+  },
+  {
+    "name": "unknown_query_type_fails",
+    "payload": {
+      "query_type": "unknown_query_xyz"
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "empty_payload_fails",
+    "payload": {},
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  }
+]

@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.vscode/
+.idea/
+.env
+.env.*
+!.env.example
+config/zoho_tokens.json
+config/cache/
+*.pem
+*.key
+*service-account*.json
+iyexis-firebase-adminsdk-*.json

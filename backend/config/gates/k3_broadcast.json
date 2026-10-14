@@ -1,0 +1,16 @@
+{
+  "agent_dir": "k3_broadcast",
+  "agent_code": "K3",
+  "business_owner_signoff": {
+    "signed_by": "Marketing Manager — Yexis Electronics",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "Mass marketing broadcast execution with delivery rate enforcement — UAT 5/5 cases passed",
+    "uat_evidence_ref": "UAT-K3-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set dry_run=true via POST /lanes/K3/dry-run {enabled:true}; broadcast jobs are created and scheduled but gateway sends are suppressed; delivery_status set to DRY_RUN.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

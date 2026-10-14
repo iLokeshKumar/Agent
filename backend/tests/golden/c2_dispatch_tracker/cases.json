@@ -1,0 +1,55 @@
+[
+  {
+    "id": "C2-G-001",
+    "description": "Happy path: shipment registered and POD confirmed within 3 days",
+    "payload": {
+      "lr_number": "LR-2026-00123",
+      "consignee_id": "CONS-HYD-042",
+      "dispatch_date": "2026-09-09",
+      "transporter_code": "TRNSP-GATI",
+      "items_count": 3
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["shipment_id", "lr_number", "dispatch_date", "status"]
+  },
+  {
+    "id": "C2-G-002",
+    "description": "POD recorded for an existing shipment — record closed",
+    "payload": {
+      "shipment_id": "SHP-2026-00123",
+      "pod_reference": "POD-GATI-987654",
+      "pod_date": "2026-09-11",
+      "action": "RECORD_POD"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["shipment_id", "pod_reference", "pod_date", "closed_at"]
+  },
+  {
+    "id": "C2-G-003",
+    "description": "Missing lr_number on registration — validation error",
+    "payload": {
+      "consignee_id": "CONS-HYD-042",
+      "dispatch_date": "2026-09-09",
+      "transporter_code": "TRNSP-GATI"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "C2-G-004",
+    "description": "Invalid action enum value — validation error",
+    "payload": {
+      "shipment_id": "SHP-2026-00123",
+      "action": "DESTROY_SHIPMENT"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "C2-G-005",
+    "description": "Empty payload — validation error",
+    "payload": {},
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error"]
+  }
+]

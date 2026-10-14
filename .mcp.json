@@ -1,0 +1,46 @@
+{
+  "mcpServers": {
+    "ZohoBooks": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://yexis-60085779935.zohomcp.in/mcp/6210ae9c8bfddece3b4b07658fa39ba3/message",
+        "--transport",
+        "http-only"
+      ]
+    },
+    "ZohoCRM": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://ye-60085779935.zohomcp.in/mcp/0773c6c0ed17efffc41a844a7e1cbb90/message",
+        "--transport",
+        "http-only"
+      ]
+    },
+    "apollo": {
+      "url": "https://mcp.apollo.io/mcp"
+    },
+    "rocketreach": {
+      "url": "https://mcp.rocketreach.co/mcp"
+    },
+    "yexis-local-db": {
+      "command": "python",
+      "args": [
+        "E:\\ai_agent_platform\\backend\\mcp_servers\\local_db\\server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "E:\\ai_agent_platform\\backend"
+      }
+    },
+    "yexis-whatsapp": {
+      "command": "python",
+      "args": [
+        "E:\\ai_agent_platform\\backend\\mcp_servers\\whatsapp\\server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "E:\\ai_agent_platform\\backend"
+      }
+    }
+  }
+}

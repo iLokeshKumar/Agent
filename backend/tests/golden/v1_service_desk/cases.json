@@ -1,0 +1,35 @@
+[
+  {
+    "name": "standard_service_ticket",
+    "payload": {
+      "request_type": "service_request",
+      "description": "Display flickering"
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": [
+        "ticket"
+      ]
+    }
+  },
+  {
+    "name": "rma_ticket",
+    "payload": {
+      "request_type": "rma",
+      "description": "Dead panel"
+    },
+    "expect": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "name": "unknown_type_rejected",
+    "payload": {
+      "request_type": "refund_please",
+      "description": "x"
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  }
+]

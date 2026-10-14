@@ -1,0 +1,89 @@
+[
+  {
+    "name": "clean_under_budget_order",
+    "payload": {
+      "vendor": "Acme Corp",
+      "items": [
+        {
+          "item": "Widget",
+          "quantity": 2,
+          "unit_price": 500
+        }
+      ],
+      "budget_limit": 5000
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": [
+        "po_number"
+      ],
+      "actions.contains": "created_po"
+    }
+  },
+  {
+    "name": "exact_budget_boundary_is_allowed",
+    "payload": {
+      "vendor": "Acme Corp",
+      "items": [
+        {
+          "item": "Widget",
+          "quantity": 10,
+          "unit_price": 100
+        }
+      ],
+      "budget_limit": 1000
+    },
+    "expect": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "name": "over_budget_requests_approval",
+    "payload": {
+      "vendor": "Acme Corp",
+      "items": [
+        {
+          "item": "Gold Bar",
+          "quantity": 1,
+          "unit_price": 9000
+        }
+      ],
+      "budget_limit": 1000
+    },
+    "expect": {
+      "status": "NEEDS_APPROVAL"
+    }
+  },
+  {
+    "name": "no_budget_limit_means_uncapped_at_agent_level",
+    "payload": {
+      "vendor": "Acme Corp",
+      "items": [
+        {
+          "item": "Widget",
+          "quantity": 1,
+          "unit_price": 1
+        }
+      ]
+    },
+    "expect": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "name": "zero_quantity_rejected",
+    "payload": {
+      "vendor": "Acme Corp",
+      "items": [
+        {
+          "item": "Widget",
+          "quantity": 0,
+          "unit_price": 5
+        }
+      ]
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  }
+]

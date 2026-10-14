@@ -1,0 +1,16 @@
+{
+  "agent_dir": "d1_ask_business",
+  "agent_code": "D1",
+  "business_owner_signoff": {
+    "signed_by": "MD — Yexis Electronics",
+    "signed_at": "2026-09-09T18:00:00+05:30",
+    "uat_evidence_ref": "docs/phase1-dry-run-uat-2026-09-09.md",
+    "scope": "Business intelligence queries — dry-run UAT 10/10 cases passed. Figures reconciled to agreed source spreadsheet."
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-09T17:00:00+05:30",
+    "procedure": "D1 is read-only; rollback is not applicable. Kill-switch at POST /lanes/D1/kill-switch {pulled:true} disables all D1 queries.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

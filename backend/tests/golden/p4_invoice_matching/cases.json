@@ -1,0 +1,57 @@
+[
+  {
+    "name": "fully_matched_invoice",
+    "payload": {
+      "invoice_number": "INV-2026-001",
+      "po_number": "PO-2026-001",
+      "invoice_amount": 50000.0,
+      "vendor": "Samsung India Electronics"
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["match_result"],
+      "actions.contains": "match_attempted"
+    }
+  },
+  {
+    "name": "missing_invoice_number_fails_validation",
+    "payload": {
+      "po_number": "PO-2026-001",
+      "invoice_amount": 50000.0
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "missing_po_number_fails_validation",
+    "payload": {
+      "invoice_number": "INV-2026-002",
+      "invoice_amount": 10000.0
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "price_variance_detected",
+    "payload": {
+      "invoice_number": "INV-2026-003",
+      "po_number": "PO-2026-003",
+      "invoice_amount": 75000.0,
+      "vendor": "Samsung India Electronics",
+      "tolerance_pct": 0.0
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["match_result"]
+    }
+  },
+  {
+    "name": "empty_payload_rejected",
+    "payload": {},
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  }
+]

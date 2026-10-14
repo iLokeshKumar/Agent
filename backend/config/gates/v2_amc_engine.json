@@ -1,0 +1,16 @@
+{
+  "agent_dir": "v2_amc_engine",
+  "agent_code": "V2",
+  "business_owner_signoff": {
+    "signed_by": "Service Manager — Yexis Electronics",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "AMC renewal lifecycle management — UAT 5/5 cases passed",
+    "uat_evidence_ref": "UAT-V2-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set dry_run=true via POST /lanes/V2/dry-run {enabled:true}; renewal notices are generated but not dispatched, payment links suppressed.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

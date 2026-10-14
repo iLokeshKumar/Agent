@@ -1,0 +1,16 @@
+{
+  "agent_dir": "k4_dealer_promo",
+  "agent_code": "K4",
+  "business_owner_signoff": {
+    "signed_by": "Marketing Manager — Yexis Electronics",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "Dealer promotional scheme design and participation tracking — UAT 5/5 cases passed",
+    "uat_evidence_ref": "UAT-K4-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set dry_run=true via POST /lanes/K4/dry-run {enabled:true}; scheme drafts generated but not written to promo_schemes table; dealer eligibility queries run against read replica.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

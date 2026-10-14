@@ -1,0 +1,16 @@
+{
+  "agent_dir": "h3_attrition_risk",
+  "agent_code": "H3",
+  "business_owner_signoff": {
+    "signed_by": "HR Manager",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "Employee flight-risk scoring based on tenure and engagement signals. A1 only — proposes check-ins, never modifies employment records.",
+    "uat_evidence_ref": "UAT-H3-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set lane dry_run=true for H3. Reset hr_employee.risk_score=NULL for all rows via admin SQL. Scores are re-derived on next run.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

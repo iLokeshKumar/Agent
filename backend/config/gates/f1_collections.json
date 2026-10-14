@@ -1,0 +1,16 @@
+{
+  "agent_dir": "f1_collections",
+  "agent_code": "F1",
+  "business_owner_signoff": {
+    "signed_by": "Finance Manager — Yexis Electronics",
+    "signed_at": "2026-09-09T18:00:00+05:30",
+    "uat_evidence_ref": "docs/phase1-dry-run-uat-2026-09-09.md",
+    "scope": "Dunning cadence segmentation and cadence proposal — dry-run UAT 10/10 cases passed. No actual messages sent in dry-run."
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-09T17:00:00+05:30",
+    "procedure": "Set dry_run=true or MAIL_SEND_ENABLED=false; cadence logic runs but no WhatsApp/email messages are dispatched.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

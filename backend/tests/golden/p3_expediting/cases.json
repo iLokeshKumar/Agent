@@ -1,0 +1,86 @@
+[
+  {
+    "name": "late_po_escalates_to_buyer_call",
+    "payload": {
+      "today": "2026-09-02",
+      "pos": [
+        {"po_number": "PO-G-001", "vendor": "Acme Corp",
+         "committed_date": "2026-08-28",
+         "value": 250000,
+         "project_milestone": true}
+      ]
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["po_rows", "summary", "brief"],
+      "actions.contains": ["scored_open_pos"]
+    }
+  },
+  {
+    "name": "unconfirmed_po_inside_confirm_window_gets_chase",
+    "payload": {
+      "today": "2026-09-02",
+      "pos": [
+        {"po_number": "PO-G-002", "vendor": "Beta Integrators",
+         "committed_date": "2026-09-04",
+         "confirmed": false}
+      ]
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["po_rows", "brief"]
+    }
+  },
+  {
+    "name": "priced_mitigation_always_pending_approval",
+    "payload": {
+      "today": "2026-09-02",
+      "pos": [
+        {"po_number": "PO-G-003", "vendor": "Gamma Supplies",
+         "committed_date": "2026-08-30",
+         "mitigation": {"type": "air_freight", "cost": 45000}}
+      ]
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["po_rows", "summary", "brief"]
+    }
+  },
+  {
+    "name": "vendor_history_builds_otif_scorecards",
+    "payload": {
+      "today": "2026-09-02",
+      "pos": [
+        {"po_number": "PO-G-004", "vendor": "Delta Traders",
+         "committed_date": "2026-09-20"}
+      ],
+      "vendor_history": {
+        "Delta Traders": {"on_time": 17, "total": 20}
+      }
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": ["po_rows", "vendor_scorecards"]
+    }
+  },
+  {
+    "name": "empty_payload_rejected_by_contract",
+    "payload": {},
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "negative_po_value_rejected_by_contract",
+    "payload": {
+      "today": "2026-09-02",
+      "pos": [
+        {"po_number": "PO-G-BAD", "vendor": "V",
+         "committed_date": "2026-09-02", "value": -1}
+      ]
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  }
+]

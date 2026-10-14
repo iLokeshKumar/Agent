@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ISM Console — Yexis</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2430;--muted:#5d6878;--line:#dde2ea;--accent:#1f6feb;--good:#1a7f37;--warn:#9a6700;--bad:#cf222e;--chip:#eef2f8}
+@media (prefers-color-scheme:dark){:root{--bg:#0f141b;--panel:#161d27;--ink:#e6edf3;--muted:#9aa7b6;--line:#2a3442;--accent:#4c9aff;--good:#3fb950;--warn:#d29922;--bad:#f85149;--chip:#1f2a38}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+h1{font-size:17px;margin:0 12px 0 0}h2{font-size:15px;margin:18px 0 8px}main{padding:16px 20px;max-width:1280px;margin:0 auto}
+select,input,button,textarea{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 9px}
+button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:disabled{opacity:.5;cursor:default}
+nav{display:flex;gap:4px;margin-bottom:14px;flex-wrap:wrap}nav button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.kpis{display:flex;gap:10px;flex-wrap:wrap}.kpi{background:var(--chip);border-radius:8px;padding:8px 12px;min-width:120px}.kpi b{display:block;font-size:18px}
+.kpi span{color:var(--muted);font-size:12px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:12px}.muted{color:var(--muted)}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.tag{display:inline-block;background:var(--chip);border-radius:5px;padding:1px 7px;font-size:12px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+pre{white-space:pre-wrap;background:var(--chip);padding:8px;border-radius:7px;margin:6px 0;font:12.5px/1.45 ui-monospace,Consolas,monospace}
+.variant{border:1px solid var(--line);border-radius:7px;padding:8px;margin:6px 0}#msg{min-height:20px}
+.wrap{overflow-x:auto}
+</style></head><body>
+<header><h1>ISM Console</h1>
+<select id="camp"><option value="">Choose a campaign…</option></select>
+<button id="newBtn">New campaign</button><span id="msg" class="muted"></span></header>
+<main>
+<div id="newForm" class="panel" hidden>
+  <h2 style="margin-top:0">New ISM campaign</h2>
+  <div class="row"><input id="nName" placeholder="Name, e.g. Interactive displays — Education TN" size="44">
+  <input id="nVert" value="Education,Government" size="22" title="Verticals"><input id="nReg" value="Tamil Nadu" size="14" title="Regions">
+  <input id="nDays" type="number" value="60" style="width:80px" title="Window (days)">
+  <input id="nTarget" type="number" placeholder="Pipeline target (Rs)" style="width:170px">
+  <input id="nTpl" placeholder="First email template_id" size="22"><button class="primary" id="nSave">Create</button></div>
+  <p class="muted">The campaign sends nothing until it is approved on the Review tab.</p>
+</div>
+<nav><button data-t="review" class="on">Review &amp; approve</button><button data-t="queue">ISR queue</button>
+<button data-t="accounts">Accounts</button><button data-t="perf">Performance</button></nav>
+<section id="t-review"></section><section id="t-queue" hidden></section>
+<section id="t-accounts" hidden></section><section id="t-perf" hidden></section>
+</main>
+<script>
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rs=n=>'Rs '+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});
+async function api(path,opt={}){const r=await fetch('/ism'+path,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...opt});
+  const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={detail:t}};if(!r.ok)throw new Error(typeof j.detail==='string'?j.detail:JSON.stringify(j.detail||j));return j}
+const say=(t,cls='muted')=>{const m=$('#msg');m.className=cls;m.textContent=t};
+let campaigns=[];const cid=()=>$('#camp').value;
+async function loadCampaigns(){campaigns=await api('/campaigns');const s=$('#camp'),v=s.value;
+  s.innerHTML='<option value="">Choose a campaign…</option>'+campaigns.map(c=>`<option value="${c.id}">${esc(c.ref)} · ${esc(c.name)} ${c.approved?'✓':''}</option>`).join('');s.value=v}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  ['review','queue','accounts','perf'].forEach(t=>$('#t-'+t).hidden=t!==b.dataset.t);render(b.dataset.t)});
+$('#camp').onchange=()=>render(document.querySelector('nav button.on').dataset.t);
+$('#newBtn').onclick=()=>$('#newForm').hidden=!$('#newForm').hidden;
+$('#nSave').onclick=async()=>{try{const brief={verticals:$('#nVert').value.split(',').map(s=>s.trim()).filter(Boolean),regions:$('#nReg').value.split(',').map(s=>s.trim()).filter(Boolean),
+  window_days:+$('#nDays').value||60,pipeline_target:+$('#nTarget').value||null};
+  const r=await api('/campaigns',{method:'POST',body:JSON.stringify({name:$('#nName').value,brief,template_id:$('#nTpl').value||null})});
+  await loadCampaigns();$('#camp').value=r.id;$('#newForm').hidden=true;say('Created '+r.ref,'good');render('review')}catch(e){say(e.message,'bad')}};
+function render(t){({review:renderReview,queue:renderQueue,accounts:renderAccounts,perf:renderPerf})[t]().catch(e=>say(e.message,'bad'))}
+
+async function renderReview(){const el=$('#t-review');if(!cid()){el.innerHTML='<div class="panel muted">Choose or create a campaign.</div>';return}
+  const r=await api(`/campaigns/${cid()}/review`),cap=r.capacity,c=r.campaign;
+  const issues=[...r.missing_templates.map(t=>`Template ${t} not registered`),...r.unapproved_templates.map(t=>`Template ${t} still pending approval`)];
+  if(!r.first_template)issues.push('No first email template set');if(!r.contacts)issues.push('No contacts yet: build the audience');if(cap.note)issues.push(cap.note);
+  el.innerHTML=`<div class="panel"><div class="row" style="justify-content:space-between"><div><b>${esc(c.name)}</b> <span class="tag">${esc(c.status)}</span>
+   ${c.approved?`<span class="tag good">Approved ${esc(c.approved.slice(0,10))} by ${esc(c.approved_by)}</span>`:'<span class="tag warn">Not approved — nothing sends</span>'}</div>
+   <div class="row"><button id="bAud">Build audience from pilot accounts</button></div></div>
+   <div class="kpis" style="margin-top:12px"><div class="kpi"><b>${r.contacts}</b><span>contacts</span></div><div class="kpi"><b>${r.with_email}</b><span>with email</span></div>
+   <div class="kpi"><b>${r.with_phone}</b><span>with phone</span></div>${Object.entries(r.by_tier).map(([k,v])=>`<div class="kpi"><b>${v}</b><span>tier ${esc(k)}</span></div>`).join('')}</div></div>
+  <div class="panel"><h2 style="margin-top:0">Segments and ISR capacity</h2>
+   <p>${Object.entries(cap.by_segment).map(([k,v])=>`<span class="tag">${esc(k)}: ${v}</span>`).join(' ')||'<span class="muted">No contacts</span>'}</p>
+   <p>${cap.manual_steps_per_contact} manual step(s) per contact × ${cap.contacts} contacts = <b>${cap.demand_touches}</b> calls/LinkedIn touches.
+   Capacity: ${cap.isrs.length} ISR(s) × ${cap.calls_per_isr_per_day}/day × ${cap.working_days} working days = <b>${cap.capacity_touches}</b>.
+   ${cap.over_capacity?`<span class="bad">Over capacity — ${cap.trim_suggested.length} lowest-priority contacts suggested for trimming.</span>`:'<span class="good">Within capacity.</span>'}</p>
+   <p class="muted">ISRs: ${cap.isrs.map(esc).join(', ')||'none set'}</p></div>
+  <div class="panel"><h2 style="margin-top:0">Sequence</h2><div class="wrap"><table><tr><th>Step</th><th>After</th><th>Channel</th><th>Template</th><th>Condition</th></tr>
+   <tr><td>0</td><td>schedule</td><td>email</td><td>${esc(r.first_template||'—')}</td><td>first send</td></tr>
+   ${r.sequence.map(s=>`<tr><td>${s.step}</td><td>${s.after_hours} h</td><td>${esc(s.channel)}</td><td>${esc(s.template_id)}</td><td>${esc(s.condition)}</td></tr>`).join('')}</table></div></div>
+  <div class="panel"><h2 style="margin-top:0">Templates — sign off the exact wording</h2><div class="wrap"><table><tr><th>Template</th><th>Status</th><th></th></tr>
+   ${Object.entries(r.templates).map(([k,v])=>`<tr data-tpl="${esc(k)}"><td><b>${esc(k)}</b><br><span class="muted">${esc(v.purpose||'')}</span><pre hidden></pre></td>
+    <td class="${v.approval_status==='pending'?'warn':'good'}">${esc(v.approval_status)}</td><td style="white-space:nowrap"><button data-a="view">View</button>
+    ${v.approval_status==='pending'?'<button data-a="ok" class="primary">Approve wording</button>':''}</td></tr>`).join('')}</table></div></div>
+  <div class="panel" id="wavesPanel"><h2 style="margin-top:0">Waves</h2><p class="muted">Loading…</p></div>
+  <div class="panel"><h2 style="margin-top:0">Approve</h2>${issues.length?`<ul class="bad">${issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:'<p class="good">Ready for approval.</p>'}
+   <div class="row"><label><input type="checkbox" id="trim"> Apply the suggested trim</label><button class="primary" id="bApprove" ${c.approved?'disabled':''}>Approve campaign</button></div></div>`;
+  el.querySelectorAll('tr[data-tpl]').forEach(tr=>{const id=tr.dataset.tpl;
+    tr.querySelector('[data-a=view]').onclick=async()=>{const t=await api('/templates/'+encodeURIComponent(id));const pre=tr.querySelector('pre');
+      if(!pre.hidden){pre.hidden=true;return}pre.hidden=false;
+      pre.innerHTML=`<input class="tSub" value="${esc(t.subject||'')}" style="width:100%;margin-bottom:6px" ${t.channel==='email'?'':'disabled'}>
+        <textarea class="tBody" rows="12" style="width:100%">${esc(t.body)}</textarea><button class="tSave">Save wording</button> <span class="muted">Saving puts it back to pending.</span>`;
+      pre.querySelector('.tSave').onclick=async()=>{try{await api('/templates/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify({subject:pre.querySelector('.tSub').value,body:pre.querySelector('.tBody').value})});
+        say('Saved — approve it again when ready','good');renderReview()}catch(e){say(e.message,'bad')}}};
+    const okb=tr.querySelector('[data-a=ok]');if(okb)okb.onclick=async()=>{if(!confirm('Approve this exact wording for sending?'))return;
+      try{await api('/templates/'+encodeURIComponent(id)+'/approve',{method:'POST'});say('Template approved','good');renderReview()}catch(e){say(e.message,'bad')}}});
+  renderWaves();
+  $('#bAud').onclick=async()=>{try{const o=await api(`/campaigns/${cid()}/audience`,{method:'POST',body:'{}'});say(`Added ${o.added}, total ${o.total_audience}${o.source_errors&&o.source_errors.crm_accounts?' · '+o.source_errors.crm_accounts:''}`,'good');renderReview()}catch(e){say(e.message,'bad')}};
+  $('#bApprove').onclick=async()=>{if(!confirm('Approve this campaign? Scheduled sends will start going out.'))return;try{const o=await api(`/campaigns/${cid()}/approve`,{method:'POST',body:JSON.stringify({apply_trim:$('#trim').checked})});
+    say(`Approved by ${o.by}${o.trimmed?`, trimmed ${o.trimmed}`:''}. ${o.next}`,'good');await loadCampaigns();renderReview()}catch(e){say(e.message,'bad')}};}
+
+async function renderWaves(){const box=$('#wavesPanel');if(!box||!cid())return;const w=await api(`/campaigns/${cid()}/waves`);
+  if(!w.waves.length){box.innerHTML='<h2 style="margin-top:0">Waves</h2><p class="muted">No audience yet.</p>';return}
+  box.innerHTML=`<h2 style="margin-top:0">Waves</h2><div class="wrap"><table><tr><th>Wave</th><th>Contacts</th><th>Emailed</th><th>First-touch calls</th><th>Hard bounces</th><th>Unsubscribed</th><th>Replied</th><th>Status</th><th></th></tr>
+   ${w.waves.map(x=>`<tr><td>${x.wave}</td><td>${x.contacts}</td><td>${x.emailed}</td><td>${x.first_touch_calls}</td>
+    <td class="${x.healthy?'':'bad'}">${x.hard_bounces}${x.hard_bounce_pct!==null?` (${x.hard_bounce_pct}%)`:''}</td><td>${x.unsubscribed}</td><td>${x.replied}</td>
+    <td>${x.released?`<span class="tag good">released ${esc((x.released_ts||'').slice(0,10))}</span>`:'<span class="tag">held</span>'}</td>
+    <td>${x.released?'':`<button data-w="${x.wave}">Release</button>`}</td></tr>`).join('')}</table></div>
+   <label class="muted"><input type="checkbox" id="pmChk"> I checked Google Postmaster Tools: no spam complaints for the sending domain</label>`;
+  box.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{try{await api(`/campaigns/${cid()}/waves/${b.dataset.w}/release`,{method:'POST',body:JSON.stringify({postmaster_checked:$('#pmChk').checked})});
+    say('Wave '+b.dataset.w+' released','good');renderWaves()}catch(e){say(e.message,'bad')}})}
+
+async function renderQueue(){const el=$('#t-queue');const isr=localStorage.getItem('ism_isr')||'';
+  const q=await api('/queue'+(isr?`?isr=${encodeURIComponent(isr)}`:''));const today=new Date().toISOString().slice(0,10);
+  el.innerHTML=`<div class="panel"><div class="row"><input id="qIsr" placeholder="Filter by ISR name" value="${esc(isr)}"><button id="qGo">Show</button>
+   <span class="muted">${q.count} open task(s)</span></div><div class="wrap"><table><tr><th>Due</th><th>Type</th><th>Task</th><th>Owner</th><th></th></tr>
+   ${q.tasks.map(t=>`<tr data-id="${t.id}"><td class="${t.due<today?'bad':''}">${esc(t.due)}</td><td><span class="tag">${esc(t.kind)}</span></td>
+    <td><b>${esc(t.subject)}</b> ${t.crm_task_id?'<span class="tag">in CRM</span>':''}<details><summary class="muted">details</summary><pre>${esc(t.body)}</pre></details><div class="vars"></div></td>
+    <td>${esc(t.owner_isr||'unassigned')}</td><td style="white-space:nowrap"><button data-a="drafts">Draft 3</button>
+    <input data-a="out" placeholder="Outcome" size="16"> <button data-a="done" class="primary">Done</button> <button data-a="skip">Skip</button></td></tr>`).join('')}</table></div></div>`;
+  $('#qGo').onclick=()=>{localStorage.setItem('ism_isr',$('#qIsr').value.trim());renderQueue()};
+  el.querySelectorAll('tr[data-id]').forEach(tr=>{const id=tr.dataset.id;let picked=null;
+    tr.querySelector('[data-a=drafts]').onclick=async e=>{e.target.disabled=true;say('Drafting…');try{const v=(await api(`/tasks/${id}/drafts`,{method:'POST'})).variants;say('');
+      tr.querySelector('.vars').innerHTML=v.map((x,i)=>`<div class="variant"><pre>${esc(x)}</pre><button data-i="${i}">Use this</button></div>`).join('');
+      tr.querySelectorAll('.vars button').forEach(b=>b.onclick=()=>{picked=+b.dataset.i;navigator.clipboard&&navigator.clipboard.writeText(v[picked]);say('Copied variant '+(picked+1)+' — edit freely before sending.','good')})}catch(err){say(err.message,'bad')}e.target.disabled=false};
+    const fin=async status=>{const out=tr.querySelector('[data-a=out]').value;let edited=null;if(picked!==null)edited=confirm('Did you edit the draft before sending? OK = edited, Cancel = sent as-is');
+      try{await api(`/tasks/${id}/complete`,{method:'POST',body:JSON.stringify({status,outcome:out||null,picked_variant:picked,edited})});tr.remove();say('Saved','good')}catch(err){say(err.message,'bad')}};
+    tr.querySelector('[data-a=done]').onclick=()=>fin('done');tr.querySelector('[data-a=skip]').onclick=()=>fin('skipped')})}
+
+async function renderAccounts(){const el=$('#t-accounts');const f=JSON.parse(localStorage.getItem('ism_acc')||'{"tier":"","vertical":"","q":"","pilot":""}');
+  const qs=new URLSearchParams(Object.entries(f).filter(([k,v])=>v));const a=await api('/accounts?'+qs);
+  el.innerHTML=`<div class="panel"><div class="row"><select id="fTier"><option value="">All tiers</option><option>P1</option><option>P2</option><option>P3</option></select>
+   <select id="fVert"><option value="">All verticals</option><option>Education</option><option>Government</option><option>PSU</option><option>Healthcare</option></select>
+   <select id="fPilot"><option value="">Pilot and non-pilot</option><option value="true">Pilot only</option></select>
+   <input id="fQ" placeholder="Name contains" value="${esc(f.q)}"><button id="fGo">Filter</button><span class="muted">${a.count} shown (max 200)</span>
+   <span style="flex:1"></span><button id="fImp" title="Reads campaign_phase0/pilot_candidates_education_government.csv">Import pilot sheet</button></div>
+   <div class="wrap"><table><tr><th>Account</th><th>Tier</th><th>Fit</th><th>Intent</th><th>Region</th><th>Owner ISR</th><th>Pilot</th><th>Contact</th></tr>
+   ${a.accounts.map(p=>`<tr data-id="${esc(p.account_id)}"><td><b>${esc(p.name)}</b><br><span class="muted">${esc(p.vertical||'—')}${p.off_limits?' · <span class="bad">off-limits</span>':''}</span>
+    <details><summary class="muted">why</summary><pre>${esc((p.fit_reasons||[]).join('\n'))}</pre></details></td><td>${esc(p.tier||'')}</td><td>${p.fit}</td><td>${p.intent}</td>
+    <td><input data-f="region" value="${esc(p.region||'')}" size="10"><br><span class="muted">${esc(p.region_source||'')}</span></td>
+    <td><input data-f="owner_isr" value="${esc(p.owner_isr||'')}" size="12"></td><td><input type="checkbox" data-f="pilot" ${p.pilot?'checked':''}></td>
+    <td class="muted">${esc(p.phones||'')}<br>${esc(p.emails||'')}${p.email_on_dead_isp?' <span class="bad">dead ISP</span>':''}</td></tr>`).join('')}</table></div></div>`;
+  $('#fImp').onclick=async()=>{if(!confirm('Import the pilot sheet from campaign_phase0 and re-score all accounts?'))return;say('Importing…');
+    try{const r=await api('/accounts/import',{method:'POST',body:JSON.stringify({file:'pilot_candidates_education_government.csv'})});
+    say(`Imported: ${r.added} new, ${r.updated} updated · tiers P1 ${r.tiers.P1}, P2 ${r.tiers.P2}, P3 ${r.tiers.P3}`,'good');renderAccounts()}catch(e){say(e.message,'bad')}};
+  $('#fTier').value=f.tier;$('#fVert').value=f.vertical;$('#fPilot').value=f.pilot;
+  $('#fGo').onclick=()=>{localStorage.setItem('ism_acc',JSON.stringify({tier:$('#fTier').value,vertical:$('#fVert').value,pilot:$('#fPilot').value,q:$('#fQ').value.trim()}));renderAccounts()};
+  el.querySelectorAll('tr[data-id] [data-f]').forEach(inp=>inp.onchange=async()=>{const id=inp.closest('tr').dataset.id;const body={[inp.dataset.f]:inp.type==='checkbox'?inp.checked:inp.value.trim()};
+    try{const r=await api('/accounts/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(body)});say(`Saved · tier ${r.tier}, fit ${r.fit}`,'good')}catch(e){say(e.message,'bad')}})}
+
+async function renderPerf(){const el=$('#t-perf');const cards=(await api('/isr-cards')).cards;let fc=null,at=null,gr=null;
+  if(cid()){[fc,at,gr]=await Promise.all([api(`/campaigns/${cid()}/forecast`),api(`/campaigns/${cid()}/attribution`),api(`/campaigns/${cid()}/gate-report`)])}
+  const gate=gr?`<div class="panel"><h2 style="margin-top:0">Pilot gate report ${gr.gate_passed?'<span class="tag good">passing</span>':'<span class="tag warn">not passing yet</span>'}</h2>
+   <div class="wrap"><table><tr><th>Measure</th><th>Now</th><th>Gate</th><th></th></tr>${gr.checks.map(c=>`<tr><td>${esc(c.measure)}</td><td>${esc(Array.isArray(c.value)?c.value.join(', '):(c.value??'no data yet'))}</td>
+    <td>${esc(c.gate)}</td><td class="${c.pass===true?'good':c.pass===false?'bad':'muted'}">${c.pass===true?'pass':c.pass===false?'not yet':'check manually'}</td></tr>`).join('')}</table></div>
+   <p class="muted">Enrolled ${gr.enrolled} · emailed ${gr.emailed} · positive replies ${gr.positive_replies} · meetings ${gr.meetings} · accounts per ISR ${esc(Object.entries(gr.accounts_per_isr).map(([k,v])=>k+': '+v).join(', '))}</p></div>`:'';
+  el.innerHTML=gate+`<div class="panel"><h2 style="margin-top:0">ISR cards — last 7 days</h2><div class="wrap"><table><tr><th>ISR</th><th>Done / due</th><th>Overdue</th><th>Calls</th><th>Replies</th><th>Deals</th><th>Pipeline</th><th>Drafts as-is / edited</th></tr>
+   ${cards.map(c=>`<tr><td>${esc(c.isr)}</td><td>${c.tasks_done}/${c.tasks_due}${c.completion_pct!==null?` (${c.completion_pct}%)`:''}</td><td class="${c.tasks_overdue_open?'bad':''}">${c.tasks_overdue_open}</td>
+    <td>${c.calls_done}</td><td>${c.replies} (${c.positive_replies} positive)</td><td>${c.deals_created}</td><td>${rs(c.pipeline_created)}</td><td>${c.drafts_sent_as_is} / ${c.drafts_edited}</td></tr>`).join('')||'<tr><td colspan="8" class="muted">No tasks yet</td></tr>'}</table></div></div>
+  ${fc?`<div class="panel"><h2 style="margin-top:0">Forecast and attribution</h2><div class="kpis"><div class="kpi"><b>${rs(fc.expected)}</b><span>expected (stage-weighted)</span></div>
+   <div class="kpi"><b>${rs(fc.low_80)} – ${rs(fc.high_80)}</b><span>80% range</span></div><div class="kpi"><b>${rs(at.pipeline_credited)}</b><span>pipeline credited</span></div>
+   <div class="kpi"><b>${rs(at.revenue_credited)}</b><span>revenue credited</span></div></div>${fc.note?`<p class="warn">${esc(fc.note)}</p>`:''}
+   <div class="wrap"><table><tr><th>Deal</th><th>Stage</th><th>Amount</th><th>Credit share</th></tr>${at.deals.map(d=>`<tr><td>${esc(d.deal)}</td><td>${esc(d.stage)}</td><td>${rs(d.amount)}</td><td>${Math.round(d.share*100)}%</td></tr>`).join('')||'<tr><td colspan="4" class="muted">No deals linked yet</td></tr>'}</table></div></div>`:'<div class="panel muted">Choose a campaign to see its forecast and attribution.</div>'}
+  <div class="panel"><h2 style="margin-top:0">Log a deal</h2><p class="muted">Zoho CRM cannot create Deals on the Free edition, so log them here; they sync with CRM Deals once it is upgraded.</p>
+   <div class="row"><input id="dName" placeholder="Deal name" size="28"><input id="dAcc" placeholder="Account id (from Accounts tab)" size="22">
+   <select id="dStage">${['Qualification','Needs Analysis','Value Proposition','Identify Decision Makers','Proposal/Price Quote','Negotiation/Review','Closed Won','Closed Lost'].map(s=>`<option>${s}</option>`).join('')}</select>
+   <input id="dAmt" type="number" placeholder="Amount (Rs)" style="width:140px"><input id="dOwner" placeholder="ISR" size="12"><button class="primary" id="dSave">Save deal</button></div></div>`;
+  $('#dSave').onclick=async()=>{try{await api('/deals',{method:'POST',body:JSON.stringify({name:$('#dName').value,account_id:$('#dAcc').value.trim(),stage:$('#dStage').value,
+    amount:+$('#dAmt').value||0,owner_isr:$('#dOwner').value||null,campaign_id:cid()||null})});say('Deal saved','good');renderPerf()}catch(e){say(e.message,'bad')}}}
+loadCampaigns().then(()=>render('review')).catch(e=>say(e.message,'bad'));
+</script></body></html>

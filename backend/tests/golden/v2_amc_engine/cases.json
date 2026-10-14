@@ -1,0 +1,59 @@
+[
+  {
+    "id": "V2-G-001",
+    "description": "Happy path: renewal notice dispatched for contract expiring in 15 days",
+    "payload": {
+      "contract_id": "AMC-2026-0045",
+      "customer_id": "CUST-1001",
+      "expiry_date": "2026-09-26",
+      "renewal_amount": 12000,
+      "channel": "whatsapp"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["notice_id", "contract_id", "dispatched_at", "channel"]
+  },
+  {
+    "id": "V2-G-002",
+    "description": "Customer confirms renewal — payment link generated for amount ≤ ₹50,000",
+    "payload": {
+      "contract_id": "AMC-2026-0045",
+      "customer_id": "CUST-1001",
+      "action": "ACCEPT",
+      "renewal_amount": 12000
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["payment_link", "contract_id", "expires_at"]
+  },
+  {
+    "id": "V2-G-003",
+    "description": "Missing contract_id — validation error",
+    "payload": {
+      "customer_id": "CUST-1001",
+      "expiry_date": "2026-09-26",
+      "renewal_amount": 12000,
+      "channel": "whatsapp"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "V2-G-004",
+    "description": "Invalid channel value — validation error",
+    "payload": {
+      "contract_id": "AMC-2026-0045",
+      "customer_id": "CUST-1001",
+      "expiry_date": "2026-09-26",
+      "renewal_amount": 12000,
+      "channel": "fax"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "V2-G-005",
+    "description": "Empty payload — validation error",
+    "payload": {},
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error"]
+  }
+]

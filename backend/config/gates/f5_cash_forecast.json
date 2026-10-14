@@ -1,0 +1,16 @@
+{
+  "agent_dir": "f5_cash_forecast",
+  "agent_code": "F5",
+  "business_owner_signoff": {
+    "signed_by": "Finance Manager",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "13-week rolling cash forecast from AR aging and AP payables. Advisory only — does not trigger payments.",
+    "uat_evidence_ref": "UAT-F5-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set lane dry_run=true for F5. CashForecast rows are nightly-regenerated; no destructive rollback needed. Simply disable the lane to stop forecast updates.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

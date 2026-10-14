@@ -1,0 +1,103 @@
+[
+  {
+    "name": "clean_issue_to_two_vendors",
+    "payload": {
+      "mode": "issue",
+      "vendors": ["Alpha Systems", "Beta Integrators"],
+      "items": [
+        {"item": "AV Control Panel", "quantity": 2}
+      ],
+      "currency": "INR"
+    },
+    "expect": {
+      "status": "SUCCESS",
+      "output.contains": [
+        "rfq_number"
+      ],
+      "actions.contains": "issued_rfq"
+    }
+  },
+  {
+    "name": "collect_against_unknown_rfq_refused",
+    "payload": {
+      "mode": "collect",
+      "rfq_number": "RFQ-GOLDEN-0001",
+      "quotes": [
+        {"vendor": "Alpha Systems", "total_amount": 120000}
+      ]
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "compare_recommends_cheapest_and_awaits_buyer",
+    "payload": {
+      "mode": "compare",
+      "quotes": [
+        {"vendor": "Alpha Systems", "total_amount": 120000},
+        {"vendor": "Beta Integrators", "total_amount": 110000},
+        {"vendor": "Gamma AV", "total_amount": 95000}
+      ]
+    },
+    "expect": {
+      "status": "NEEDS_APPROVAL",
+      "output.contains": [
+        "recommended_vendor"
+      ],
+      "actions.contains": "awaiting_buyer_award"
+    }
+  },
+  {
+    "name": "compare_with_unparseable_quote_excludes_it",
+    "payload": {
+      "mode": "compare",
+      "quotes": [
+        {"vendor": "Alpha Systems", "total_amount": 120000},
+        {"vendor": "Beta Integrators", "total_amount": 110000},
+        {"vendor": "Gamma AV"}
+      ]
+    },
+    "expect": {
+      "status": "NEEDS_APPROVAL",
+      "output.contains": [
+        "excluded_quotes"
+      ],
+      "actions.contains": "recommended_award"
+    }
+  },
+  {
+    "name": "mixed_currency_compare_refuses_to_rank",
+    "payload": {
+      "mode": "compare",
+      "quotes": [
+        {
+          "vendor": "Alpha Systems",
+          "total_amount": 120000,
+          "currency": "INR"
+        },
+        {
+          "vendor": "Beta Integrators",
+          "total_amount": 1500,
+          "currency": "USD"
+        }
+      ]
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  },
+  {
+    "name": "no_comparable_quotes_is_validation_error",
+    "payload": {
+      "mode": "compare",
+      "quotes": [
+        {"vendor": "Alpha Systems"},
+        {"vendor": "Beta Integrators"}
+      ]
+    },
+    "expect": {
+      "status": "VALIDATION_ERROR"
+    }
+  }
+]

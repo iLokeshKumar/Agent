@@ -1,0 +1,51 @@
+[
+  {
+    "id": "H3-G-001",
+    "description": "Score all active employees for YEXIS-EL",
+    "payload": {
+      "action": "score",
+      "entity": "YEXIS-EL"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["org_mean_risk_score", "high_risk_count", "proposal"]
+  },
+  {
+    "id": "H3-G-002",
+    "description": "Report — high-risk only",
+    "payload": {
+      "action": "report",
+      "entity": "YEXIS-EL",
+      "min_tier": "high"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["employees", "proposal"]
+  },
+  {
+    "id": "H3-G-003",
+    "description": "Report — medium and high",
+    "payload": {
+      "action": "report",
+      "entity": "YEXIS-SL",
+      "min_tier": "medium"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["employees"]
+  },
+  {
+    "id": "H3-G-004",
+    "description": "Invalid entity — validation error",
+    "payload": {
+      "action": "score",
+      "entity": "YEXIS-XYZ"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "entity"
+  },
+  {
+    "id": "H3-G-005",
+    "description": "Empty payload — validation error",
+    "payload": {},
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "empty"
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "C1-G-001",
+    "description": "Happy path: indent drafted for SKU below reorder point with preferred vendor mapped",
+    "payload": {
+      "sku_id": "SKU-TV-55-QLED",
+      "current_stock": 2,
+      "reorder_point": 5,
+      "lead_time_days": 7,
+      "safety_stock": 3,
+      "preferred_vendor_id": "VND-SAMSUNG-001"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["indent_id", "sku_id", "recommended_qty", "vendor_id", "urgency_flag"]
+  },
+  {
+    "id": "C1-G-002",
+    "description": "Emergency indent: stock at zero triggers HIGH urgency flag",
+    "payload": {
+      "sku_id": "SKU-AC-1TON-INV",
+      "current_stock": 0,
+      "reorder_point": 3,
+      "lead_time_days": 5,
+      "safety_stock": 2,
+      "preferred_vendor_id": "VND-LG-002"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["indent_id", "sku_id", "recommended_qty", "urgency_flag"]
+  },
+  {
+    "id": "C1-G-003",
+    "description": "Missing sku_id — validation error",
+    "payload": {
+      "current_stock": 2,
+      "reorder_point": 5,
+      "lead_time_days": 7,
+      "preferred_vendor_id": "VND-SAMSUNG-001"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "C1-G-004",
+    "description": "Negative current_stock value — validation error",
+    "payload": {
+      "sku_id": "SKU-TV-55-QLED",
+      "current_stock": -1,
+      "reorder_point": 5,
+      "lead_time_days": 7,
+      "preferred_vendor_id": "VND-SAMSUNG-001"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "C1-G-005",
+    "description": "Empty payload — validation error",
+    "payload": {},
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error"]
+  }
+]

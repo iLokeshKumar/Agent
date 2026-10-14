@@ -1,0 +1,69 @@
+[
+  {
+    "id": "K4-G-001",
+    "description": "Happy path: dealer promo scheme drafted for TV category with eligible dealers mapped",
+    "payload": {
+      "campaign_id": "CAMP-2026-0012",
+      "scheme_name": "Diwali TV Spiff 2026",
+      "product_category": "TV",
+      "incentive_type": "SPIFF",
+      "incentive_value_per_unit": 1500,
+      "eligibility_criteria": {
+        "min_monthly_units": 3,
+        "region": "SOUTH"
+      },
+      "scheme_start": "2026-10-15",
+      "scheme_end": "2026-10-25"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["scheme_id", "scheme_name", "eligible_dealer_count", "status"]
+  },
+  {
+    "id": "K4-G-002",
+    "description": "Dealer participation recorded for active scheme",
+    "payload": {
+      "scheme_id": "PROMO-2026-0012-001",
+      "dealer_id": "DLR-HYD-042",
+      "action": "RECORD_OPT_IN",
+      "opt_in_date": "2026-10-15"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["scheme_id", "dealer_id", "participation_id", "status"]
+  },
+  {
+    "id": "K4-G-003",
+    "description": "Missing scheme_name — validation error",
+    "payload": {
+      "campaign_id": "CAMP-2026-0012",
+      "product_category": "TV",
+      "incentive_type": "SPIFF",
+      "incentive_value_per_unit": 1500,
+      "scheme_start": "2026-10-15",
+      "scheme_end": "2026-10-25"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "K4-G-004",
+    "description": "Invalid incentive_type enum — validation error",
+    "payload": {
+      "campaign_id": "CAMP-2026-0012",
+      "scheme_name": "Test Scheme",
+      "product_category": "TV",
+      "incentive_type": "BRIBE",
+      "incentive_value_per_unit": 1500,
+      "scheme_start": "2026-10-15",
+      "scheme_end": "2026-10-25"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "K4-G-005",
+    "description": "Empty payload — validation error",
+    "payload": {},
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error"]
+  }
+]

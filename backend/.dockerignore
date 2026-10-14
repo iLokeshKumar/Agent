@@ -1,0 +1,26 @@
+# Secrets and local runtime state must be injected/mounted at runtime.
+.env
+.env.*
+!.env.example
+config/zoho_tokens.json
+config/cache/
+attachments/
+*.pem
+*.key
+*service-account*.json
+iyexis-firebase-adminsdk-*.json
+
+# Virtual environments, caches, and workstation metadata.
+agents/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.idea/
+.vscode/
+

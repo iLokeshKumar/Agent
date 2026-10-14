@@ -1,0 +1,53 @@
+[
+  {
+    "id": "H1-G-001",
+    "description": "Intake new job opening",
+    "payload": {
+      "action": "intake",
+      "title": "Sales Executive",
+      "department": "Sales",
+      "entity": "YEXIS-EL",
+      "target_fill_date": "2026-10-11"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["opening_id", "jd_draft", "next_step"]
+  },
+  {
+    "id": "H1-G-002",
+    "description": "Pipeline report",
+    "payload": {
+      "action": "report",
+      "entity": "YEXIS-EL"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["total_openings", "pipeline"]
+  },
+  {
+    "id": "H1-G-003",
+    "description": "Intake missing title — validation error",
+    "payload": {
+      "action": "intake",
+      "department": "Finance"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "title"
+  },
+  {
+    "id": "H1-G-004",
+    "description": "Update with invalid status",
+    "payload": {
+      "action": "update",
+      "opening_id": "some-uuid",
+      "status": "archived"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "status"
+  },
+  {
+    "id": "H1-G-005",
+    "description": "Empty payload — validation error",
+    "payload": {},
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "empty"
+  }
+]

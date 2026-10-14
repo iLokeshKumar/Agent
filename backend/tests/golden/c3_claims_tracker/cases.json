@@ -1,0 +1,63 @@
+[
+  {
+    "id": "C3-G-001",
+    "description": "Happy path: short-delivery claim registered with evidence and notice dispatched",
+    "payload": {
+      "claim_type": "SHORT_DELIVERY",
+      "counterparty_id": "VND-SAMSUNG-001",
+      "grn_id": "GRN-2026-00456",
+      "claimed_value": 24000,
+      "evidence_refs": ["doc://grn-photo-456.jpg", "doc://delivery-note-456.pdf"],
+      "claim_date": "2026-09-11"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["claim_id", "claim_type", "status", "notice_dispatched_at"]
+  },
+  {
+    "id": "C3-G-002",
+    "description": "Counterparty response logged — claim transitions to ACCEPTED status",
+    "payload": {
+      "claim_id": "CLM-2026-0088",
+      "action": "LOG_RESPONSE",
+      "response_type": "CREDIT_NOTE",
+      "credit_note_ref": "CN-SAMSUNG-2026-1234",
+      "credit_note_amount": 24000
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["claim_id", "status", "credit_note_ref"]
+  },
+  {
+    "id": "C3-G-003",
+    "description": "Missing evidence_refs on registration — validation error",
+    "payload": {
+      "claim_type": "DAMAGE_IN_TRANSIT",
+      "counterparty_id": "TRNSP-GATI",
+      "grn_id": "GRN-2026-00457",
+      "claimed_value": 15000,
+      "claim_date": "2026-09-11"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "C3-G-004",
+    "description": "Invalid claim_type enum — validation error",
+    "payload": {
+      "claim_type": "GOODWILL_DISCOUNT",
+      "counterparty_id": "VND-LG-002",
+      "grn_id": "GRN-2026-00458",
+      "claimed_value": 5000,
+      "evidence_refs": ["doc://photo.jpg"],
+      "claim_date": "2026-09-11"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "C3-G-005",
+    "description": "Empty payload — validation error",
+    "payload": {},
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error"]
+  }
+]

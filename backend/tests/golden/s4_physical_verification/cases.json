@@ -1,0 +1,56 @@
+[
+  {
+    "id": "S4-G-001",
+    "description": "Happy path: all serials match registry — clean verification report generated",
+    "payload": {
+      "location_code": "WH-HYD-01",
+      "run_date": "2026-09-11",
+      "operator_id": "USR-STORE-001",
+      "physical_serials": ["SN-001", "SN-002", "SN-003"]
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["report_id", "match_count", "discrepancy_count", "status"]
+  },
+  {
+    "id": "S4-G-002",
+    "description": "Missing serial detected — escalation raised for Store Manager review",
+    "payload": {
+      "location_code": "WH-HYD-01",
+      "run_date": "2026-09-11",
+      "operator_id": "USR-STORE-001",
+      "physical_serials": ["SN-001", "SN-002"]
+    },
+    "expect_status": ["PENDING_APPROVAL"],
+    "expect_keys": ["report_id", "missing_serials", "escalation_ref"]
+  },
+  {
+    "id": "S4-G-003",
+    "description": "Missing required field location_code — validation error",
+    "payload": {
+      "run_date": "2026-09-11",
+      "operator_id": "USR-STORE-001",
+      "physical_serials": ["SN-001"]
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "S4-G-004",
+    "description": "Invalid run_date format — validation error",
+    "payload": {
+      "location_code": "WH-HYD-01",
+      "run_date": "11-09-2026",
+      "operator_id": "USR-STORE-001",
+      "physical_serials": ["SN-001"]
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "S4-G-005",
+    "description": "Empty payload — validation error",
+    "payload": {},
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error"]
+  }
+]

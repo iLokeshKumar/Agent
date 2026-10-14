@@ -1,0 +1,16 @@
+{
+  "agent_dir": "k1_campaign_brief",
+  "agent_code": "K1",
+  "business_owner_signoff": {
+    "signed_by": "Marketing Manager — Yexis Electronics",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "Campaign brief intake and structured record creation — UAT 5/5 cases passed",
+    "uat_evidence_ref": "UAT-K1-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set dry_run=true via POST /lanes/K1/dry-run {enabled:true}; brief records written to shadow_campaigns table, approval queue notifications suppressed.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

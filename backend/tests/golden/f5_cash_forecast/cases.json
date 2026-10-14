@@ -1,0 +1,54 @@
+[
+  {
+    "id": "F5-G-001",
+    "description": "13-week forecast for YEXIS-EL",
+    "payload": {
+      "entity": "YEXIS-EL",
+      "action": "forecast",
+      "horizon_weeks": 13
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["forecast", "total_ar_pool", "total_ap_pool"]
+  },
+  {
+    "id": "F5-G-002",
+    "description": "4-week forecast",
+    "payload": {
+      "entity": "YEXIS-SL",
+      "action": "forecast",
+      "horizon_weeks": 4
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_output": {"horizon_weeks": 4}
+  },
+  {
+    "id": "F5-G-003",
+    "description": "Report action for existing forecast",
+    "payload": {
+      "entity": "YEXIS-EL",
+      "action": "report"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["entity", "period"]
+  },
+  {
+    "id": "F5-G-004",
+    "description": "Missing entity — validation error",
+    "payload": {
+      "action": "forecast"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "entity"
+  },
+  {
+    "id": "F5-G-005",
+    "description": "horizon_weeks out of range — validation error",
+    "payload": {
+      "entity": "YEXIS-EL",
+      "action": "forecast",
+      "horizon_weeks": 52
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "horizon_weeks"
+  }
+]

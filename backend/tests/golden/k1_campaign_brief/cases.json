@@ -1,0 +1,72 @@
+[
+  {
+    "id": "K1-G-001",
+    "description": "Happy path: complete campaign brief created and routed for approval",
+    "payload": {
+      "campaign_name": "Diwali TV Offer 2026",
+      "objective": "Drive TV sales during Diwali season",
+      "target_segment": "HOME_OWNERS_25_45",
+      "channel": "whatsapp",
+      "budget": 150000,
+      "start_date": "2026-10-15",
+      "end_date": "2026-10-25",
+      "product_skus": ["SKU-TV-55-QLED", "SKU-TV-65-OLED"],
+      "submitted_by": "USR-MKT-003"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["brief_id", "campaign_name", "status", "approval_queue_ref"]
+  },
+  {
+    "id": "K1-G-002",
+    "description": "Multi-channel brief with email and WhatsApp channels — brief created",
+    "payload": {
+      "campaign_name": "Summer AC Promotion",
+      "objective": "Generate AC enquiries in peak summer",
+      "target_segment": "EXISTING_CUSTOMERS",
+      "channel": "email",
+      "budget": 80000,
+      "start_date": "2026-04-01",
+      "end_date": "2026-05-31",
+      "product_skus": ["SKU-AC-1TON-INV", "SKU-AC-15TON-INV"],
+      "submitted_by": "USR-MKT-005"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["brief_id", "campaign_name", "status"]
+  },
+  {
+    "id": "K1-G-003",
+    "description": "Missing objective field — validation error",
+    "payload": {
+      "campaign_name": "Test Campaign",
+      "target_segment": "HOME_OWNERS_25_45",
+      "channel": "whatsapp",
+      "budget": 50000,
+      "start_date": "2026-10-15",
+      "submitted_by": "USR-MKT-003"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "K1-G-004",
+    "description": "Invalid channel enum value — validation error",
+    "payload": {
+      "campaign_name": "Poster Campaign",
+      "objective": "Brand awareness",
+      "target_segment": "HOME_OWNERS_25_45",
+      "channel": "billboard",
+      "budget": 50000,
+      "start_date": "2026-10-15",
+      "submitted_by": "USR-MKT-003"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "K1-G-005",
+    "description": "Empty payload — validation error",
+    "payload": {},
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error"]
+  }
+]

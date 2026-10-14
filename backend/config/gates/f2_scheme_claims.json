@@ -1,0 +1,16 @@
+{
+  "agent_dir": "f2_scheme_claims",
+  "agent_code": "F2",
+  "business_owner_signoff": {
+    "signed_by": "Finance Manager — Yexis Electronics",
+    "signed_at": "2026-09-11T18:00:00+05:30",
+    "uat_evidence_ref": "docs/phase1-dry-run-uat-2026-09-09.md",
+    "scope": "Scheme claim intake, validation, and Samsung channel submission — claim accuracy ≥ 95%"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T17:00:00+05:30",
+    "procedure": "Set dry_run=true via POST /lanes/F2/dry-run {enabled:true}; claims validated in memory but not submitted to Samsung portal.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

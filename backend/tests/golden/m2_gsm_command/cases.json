@@ -1,0 +1,53 @@
+[
+  {
+    "id": "M2-G-001",
+    "description": "Happy path: daily GSM briefing generated with cross-suite KPI dashboard",
+    "payload": {
+      "report_type": "DAILY_BRIEFING",
+      "requested_by": "USR-GSM-001",
+      "as_of_date": "2026-09-11"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["briefing_id", "total_bookings", "total_billings", "total_collections", "dso_days", "dealer_sell_out_summary", "generated_at"]
+  },
+  {
+    "id": "M2-G-002",
+    "description": "On-demand cross-suite KPI dashboard for a specific date range",
+    "payload": {
+      "report_type": "CROSS_SUITE_KPI",
+      "requested_by": "USR-GSM-001",
+      "from_date": "2026-09-01",
+      "to_date": "2026-09-11"
+    },
+    "expect_status": ["SUCCESS"],
+    "expect_keys": ["dashboard_id", "kpi_by_suite", "period_from", "period_to"]
+  },
+  {
+    "id": "M2-G-003",
+    "description": "Missing report_type — validation error",
+    "payload": {
+      "requested_by": "USR-GSM-001",
+      "as_of_date": "2026-09-11"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "M2-G-004",
+    "description": "Invalid report_type enum value — validation error",
+    "payload": {
+      "report_type": "EMPLOYEE_APPRAISAL",
+      "requested_by": "USR-GSM-001",
+      "as_of_date": "2026-09-11"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error", "field"]
+  },
+  {
+    "id": "M2-G-005",
+    "description": "Empty payload — validation error",
+    "payload": {},
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_keys": ["error"]
+  }
+]

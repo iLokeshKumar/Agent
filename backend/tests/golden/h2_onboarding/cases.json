@@ -1,0 +1,52 @@
+[
+  {
+    "id": "H2-G-001",
+    "description": "Start onboarding for existing employee",
+    "payload": {
+      "action": "start",
+      "employee_id": "EMP001"
+    },
+    "expect_status": ["SUCCESS", "VALIDATION_ERROR"],
+    "expect_keys": ["employee_id"]
+  },
+  {
+    "id": "H2-G-002",
+    "description": "Report for employee",
+    "payload": {
+      "action": "report",
+      "employee_id": "EMP001"
+    },
+    "expect_status": ["SUCCESS", "VALIDATION_ERROR"],
+    "expect_keys": ["employee_id"]
+  },
+  {
+    "id": "H2-G-003",
+    "description": "Update item — mark laptop issued",
+    "payload": {
+      "action": "update",
+      "employee_id": "EMP001",
+      "item": "Issue laptop & accessories"
+    },
+    "expect_status": ["SUCCESS", "VALIDATION_ERROR"],
+    "expect_keys": []
+  },
+  {
+    "id": "H2-G-004",
+    "description": "Missing employee_id — validation error",
+    "payload": {
+      "action": "start"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "employee_id"
+  },
+  {
+    "id": "H2-G-005",
+    "description": "Missing item in update — validation error",
+    "payload": {
+      "action": "update",
+      "employee_id": "EMP001"
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "item"
+  }
+]

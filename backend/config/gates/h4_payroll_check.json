@@ -1,0 +1,16 @@
+{
+  "agent_dir": "h4_payroll_check",
+  "agent_code": "H4",
+  "business_owner_signoff": {
+    "signed_by": "Finance Controller",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "Pre-payment payroll validation against live employee registry. A1 only — never triggers or approves payroll disbursement.",
+    "uat_evidence_ref": "UAT-H4-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set lane dry_run=true for H4. H4 does not persist payroll data — rollback is simply disabling the lane. No data to undo.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

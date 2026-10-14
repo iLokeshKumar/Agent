@@ -1,0 +1,16 @@
+{
+  "agent_dir": "s4_physical_verification",
+  "agent_code": "S4",
+  "business_owner_signoff": {
+    "signed_by": "Store Manager — Yexis Electronics",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "Physical serial verification and discrepancy reporting — UAT 5/5 cases passed",
+    "uat_evidence_ref": "UAT-S4-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set dry_run=true via POST /lanes/S4/dry-run {enabled:true}; all serial registry reads are suppressed and comparison runs against mock snapshot.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

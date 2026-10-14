@@ -1,0 +1,63 @@
+[
+  {
+    "id": "H4-G-001",
+    "description": "Clean payroll — no anomalies expected for valid data",
+    "payload": {
+      "entity": "YEXIS-EL",
+      "payroll_lines": [
+        {"employee_id": "EMP001", "gross_pay": 45000, "department": "Sales"},
+        {"employee_id": "EMP002", "gross_pay": 65000, "department": "Finance"}
+      ]
+    },
+    "expect_status": ["SUCCESS", "NEEDS_APPROVAL"],
+    "expect_keys": ["total_anomalies", "recommendation"]
+  },
+  {
+    "id": "H4-G-002",
+    "description": "Ghost employee in payroll",
+    "payload": {
+      "entity": "YEXIS-EL",
+      "payroll_lines": [
+        {"employee_id": "GHOST999", "gross_pay": 50000}
+      ]
+    },
+    "expect_status": ["NEEDS_APPROVAL"],
+    "expect_keys": ["anomalies"],
+    "expect_anomaly_type": "ghost_employee"
+  },
+  {
+    "id": "H4-G-003",
+    "description": "Duplicate employee in payroll",
+    "payload": {
+      "entity": "YEXIS-EL",
+      "payroll_lines": [
+        {"employee_id": "EMP001", "gross_pay": 45000},
+        {"employee_id": "EMP001", "gross_pay": 45000}
+      ]
+    },
+    "expect_status": ["NEEDS_APPROVAL"],
+    "expect_keys": ["anomalies"],
+    "expect_anomaly_type": "duplicate_employee"
+  },
+  {
+    "id": "H4-G-004",
+    "description": "Empty payroll_lines — validation error",
+    "payload": {
+      "entity": "YEXIS-EL",
+      "payroll_lines": []
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "empty"
+  },
+  {
+    "id": "H4-G-005",
+    "description": "Missing entity — validation error",
+    "payload": {
+      "payroll_lines": [
+        {"employee_id": "EMP001", "gross_pay": 45000}
+      ]
+    },
+    "expect_status": ["VALIDATION_ERROR"],
+    "expect_error_contains": "entity"
+  }
+]

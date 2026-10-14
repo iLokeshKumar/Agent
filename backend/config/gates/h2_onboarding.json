@@ -1,0 +1,16 @@
+{
+  "agent_dir": "h2_onboarding",
+  "agent_code": "H2",
+  "business_owner_signoff": {
+    "signed_by": "HR Manager",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "Onboarding checklist creation and tracking for new hires. 10-item default template. Completion requires all items done.",
+    "uat_evidence_ref": "UAT-H2-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set lane dry_run=true for H2. Reset hr_employee.onboarding_status='pending' and delete OnboardingChecklist rows for affected employee via admin SQL.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

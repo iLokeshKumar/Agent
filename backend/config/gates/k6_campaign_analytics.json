@@ -1,0 +1,16 @@
+{
+  "agent_dir": "k6_campaign_analytics",
+  "agent_code": "K6",
+  "business_owner_signoff": {
+    "signed_by": "Marketing Manager — Yexis Electronics",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "Campaign KPI aggregation and analytics reporting — UAT 5/5 cases passed",
+    "uat_evidence_ref": "UAT-K6-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set dry_run=true via POST /lanes/K6/dry-run {enabled:true}; analytics queries run against shadow data; reports written to shadow_analytics_reports only.",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}

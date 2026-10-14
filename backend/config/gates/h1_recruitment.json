@@ -1,0 +1,16 @@
+{
+  "agent_dir": "h1_recruitment",
+  "agent_code": "H1",
+  "business_owner_signoff": {
+    "signed_by": "HR Manager",
+    "signed_at": "2026-09-11T10:00:00+05:30",
+    "scope": "Job intake, JD drafting, and pipeline reporting. JDs are drafts only — HR Manager must approve before external publication.",
+    "uat_evidence_ref": "UAT-H1-2026-09-11"
+  },
+  "rollback_rehearsed": {
+    "rehearsed_at": "2026-09-11T11:00:00+05:30",
+    "procedure": "Set lane dry_run=true for H1. Delete any erroneously-created JobOpening rows via admin API. No external systems affected (JDs were not published).",
+    "rehearsed_by": "Platform Admin"
+  },
+  "promoted_to_live": null
+}
