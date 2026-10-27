@@ -73,6 +73,22 @@ class Settings(BaseSettings):
     zoho_mcp_server_url_yexis: str = ""  # https://yexis-931298440.zohomcp.com/...
     zoho_mcp_server_url_agent: str = ""  # https://agent-931298440.zohomcp.com/...
 
+    # Zoho MCP connector OAuth — distinct from the Books/CRM REST OAuth above.
+    # The MCP servers reject the REST access token (401); they need a token
+    # issued to a connector registered in the Zoho MCP admin console. These
+    # values come from that console registration. authorize_url is the
+    # proprietary endpoint, e.g. https://mcp.zoho.in/mcp-client/<hash>/<name>/oauth
+    # resource is the MCP message URL the token is scoped to (the YE server).
+    zoho_mcp_client_id: str = ""
+    zoho_mcp_client_secret: str = ""
+    zoho_mcp_authorize_url: str = ""
+    zoho_mcp_token_url: str = "https://accounts.zoho.in/oauth/v2/token"
+    zoho_mcp_redirect_uri: str = "http://127.0.0.1:8000/auth/zoho-mcp/callback"
+    zoho_mcp_scopes: str = ""   # space-separated; CRM READ scopes + ZohoMCP.tool.execute
+    zoho_mcp_resource: str = ""  # the MCP message URL (YE server) the token is bound to
+    # Prefer MCP for Zoho campaign audiences; fall back to the REST clients.
+    k2_zoho_mcp_enabled: bool = True
+
     # Tally Prime — real XML-over-HTTP (no mock fallback in prod)
     tally_host: str = ""
     tally_port: int = 9000
@@ -86,7 +102,8 @@ class Settings(BaseSettings):
 
     # WhatsApp Business Platform (BSP) — real (Gallabox channel)
     waba_provider: str = ""  # gallabox | gupshup | twilio | meta
-    waba_api_key: str = ""
+    waba_api_key: str = ""     # Gallabox: API Key (the request identifier)
+    waba_api_secret: str = ""  # Gallabox: API Secret — required alongside the key
     waba_api_url: str = ""
     waba_phone_number_id: str = ""  # for Gallabox: channelId (e.g. 6a8fea...)
     waba_app_name: str = ""  # Gallabox app name / Gupshup app
@@ -135,6 +152,25 @@ class Settings(BaseSettings):
     k3_ab_decide_after_hours: float = 24.0   # wait this long after the last test send before deciding
     k3_ab_test_fraction: float = 0.2         # share of the audience used for the A/B test
 
+    # Content-correctness gate (see app/services/campaign_lint.py). When on,
+    # K3 refuses to broadcast a template with a blocker-level problem (leaked
+    # {{tokens}}, a merge field that renders blank, broken Jinja, a missing
+    # attachment, an empty body) unless an authorised caller passes
+    # force=True with an override_reason. AI proofreading (spelling/grammar)
+    # is author-time only (POST /templates/{id}/validate) and never blocks a
+    # send, since it can false-flag brand names and SKUs.
+    k3_content_gate_enabled: bool = True
+    # When on, AI proofreading ALSO blocks a send if it finds spelling/grammar
+    # issues (same force+override_reason escape hatch). It only blocks when a
+    # model provider is configured AND returns issues — an unavailable checker
+    # never blocks. Set False to keep proofreading advisory-only.
+    k3_proofread_gate_enabled: bool = True
+    # Comma-separated DKIM selectors to check for the sending domain (see
+    # GET /mail/deliverability). If you know your selector (cPanel is usually
+    # "default", Google Workspace "google"), set it here so the checker finds
+    # the key reliably; common selectors are probed in addition.
+    dkim_selectors: str = ""
+
     # ISM Campaign Assistant (Phase 1)
     ism_default_verticals: str = "Education,Government,PSU"  # default targeting for fit score
     ism_default_regions: str = "Tamil Nadu"
@@ -160,6 +196,32 @@ class Settings(BaseSettings):
 
     # RocketReach — real contact search
     rocketreach_api_key: str = ""
+
+    # JustDial — official Leads / JD Omni partner API (K2 audience source).
+    # Endpoint shape varies by contract: set the base URL, key (and secret if
+    # your plan uses one) and adjust justdial_client._map_record to your fields.
+    justdial_api_url: str = ""
+    justdial_api_key: str = ""
+    justdial_api_secret: str = ""
+
+    # Scribd — download + parse contact documents (PDF/Excel/CSV). Optional key;
+    # most docs need a reachable/shared download URL passed at build time.
+    scribd_api_key: str = ""
+
+    # Google Drive — pull contact spreadsheets (single file, folder, or link).
+    # Path to a service-account JSON with Drive read access, OR base64 of it.
+    # Defaults to the Firebase service account already shipped in the repo;
+    # the target files/folder must be shared with its client_email.
+    google_service_account_json: str = "iyexis-firebase-adminsdk-fbsvc-34f369cd49.json"
+    google_drive_folder_id: str = ""
+
+    # Google Drive MCP — backend calls a Drive MCP server over Streamable HTTP,
+    # mirroring the Zoho/Apollo MCP clients. When google_drive_mcp_server_url is
+    # set, K2's google_drive source talks MCP; otherwise it falls back to the
+    # service-account REST client above. Token is the Bearer the server expects
+    # (many Drive MCP servers use OAuth — see google_drive_mcp_client docstring).
+    google_drive_mcp_server_url: str = ""
+    google_drive_mcp_token: str = ""
 
     # Telegram Bot — campaign broadcasts + dealer chat
     telegram_bot_token: str = ""
@@ -223,6 +285,13 @@ class Settings(BaseSettings):
         "zoho_mcp_server_url",
         "zoho_mcp_server_url_yexis",
         "zoho_mcp_server_url_agent",
+        "zoho_mcp_client_id",
+        "zoho_mcp_client_secret",
+        "zoho_mcp_authorize_url",
+        "zoho_mcp_token_url",
+        "zoho_mcp_redirect_uri",
+        "zoho_mcp_scopes",
+        "zoho_mcp_resource",
         "tally_host",
         "tally_company",
         "tally_company_yexis_el",
@@ -230,6 +299,7 @@ class Settings(BaseSettings):
         "tally_company_yexis_sol",
         "waba_provider",
         "waba_api_key",
+        "waba_api_secret",
         "waba_api_url",
         "waba_phone_number_id",
         "waba_app_name",
@@ -247,6 +317,14 @@ class Settings(BaseSettings):
         "apollo_api_key",
         "apollo_linkedin_sequence_id",
         "rocketreach_api_key",
+        "justdial_api_url",
+        "justdial_api_key",
+        "justdial_api_secret",
+        "scribd_api_key",
+        "google_service_account_json",
+        "google_drive_folder_id",
+        "google_drive_mcp_server_url",
+        "google_drive_mcp_token",
         "telegram_bot_token",
         "voice_provider",
         "voice_api_key",

@@ -6,10 +6,10 @@ Streamable HTTP (zohomcp.com). This client lets the *backend*
 
 Flow (real):
   backend --httpx--> Zoho MCP (initialize -> tools/list -> tools/call)
-  Auth: Zoho OAuth access_token from app/integrations/zoho_books.py
-        (same token as REST, persisted in config/zoho_tokens.json)
-        Header: Authorization: Zoho-oauthtoken <access_token>
-                + organization header if needed
+  Auth: the key embedded in each server URL (/mcp/<key>/message) is enough.
+        If the optional MCP connector OAuth (app/api/auth_zoho_mcp.py) has
+        been completed, its token is sent as Authorization: Zoho-oauthtoken.
+        The Books/CRM REST token is never sent — the MCP servers reject it (401).
 
 Usage:
   from app.integrations.zoho_mcp_client import get_zoho_mcp_client
@@ -24,7 +24,6 @@ instruction — never returns fake tools.
 import logging
 import httpx
 from app.core.config import settings
-from app.integrations.zoho_books import get_zoho_client
 
 logger = logging.getLogger(__name__)
 
@@ -55,25 +54,19 @@ class ZohoMCPClient:
         self._session_id: str | None = None
 
     def _headers(self) -> dict:
-        client = get_zoho_client()
-        if not client.access_token:
-            # try to ensure token (will refresh if possible)
-            try:
-                client._ensure_token()
-            except Exception:
-                pass
-        token = client.access_token
-        if not token:
-            raise RuntimeError(
-                f"Zoho not authenticated — no access_token for MCP {self.server_name}. "
-                "Visit http://127.0.0.1:8000/auth/zoho in browser, login, then retry. "
-                "Token is stored in backend/config/zoho_tokens.json"
-            )
-        return {
+        # The URL key authenticates on its own. The Books/CRM REST token must
+        # NOT be sent: the MCP servers reject it with 401. Only attach the
+        # connector token if the optional MCP OAuth flow has been completed.
+        from app.integrations.zoho_mcp_auth import mcp_access_token, ZohoMcpAuthError
+        headers = {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
-            "Authorization": f"Zoho-oauthtoken {token}",
         }
+        try:
+            headers["Authorization"] = f"Zoho-oauthtoken {mcp_access_token()}"
+        except ZohoMcpAuthError:
+            pass
+        return headers
 
     def initialize(self) -> dict:
         payload = {
@@ -89,7 +82,7 @@ class ZohoMCPClient:
         r = httpx.post(self.server_url, json=payload, headers=self._headers(), timeout=30)
         # Zoho may respond with SSE stream; httpx will capture text
         if r.status_code == 401:
-            raise RuntimeError(f"Zoho MCP {self.server_name} 401 — token expired or not authorized for this MCP server. Re-run GET /auth/zoho and ensure this MCP server was shared with same Zoho user.")
+            raise RuntimeError(f"Zoho MCP {self.server_name} 401 — the server URL key was rejected, or the MCP OAuth token at /auth/zoho-mcp/status has expired. Re-copy the server URL from the Zoho MCP console.")
         r.raise_for_status()
         # Try parse JSON, fallback to text
         try:

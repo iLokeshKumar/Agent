@@ -15,6 +15,15 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Zoho caps a single page at 200 records. Full-table pulls paginate until
+# info.more_records is false, bounded by MAX_RECORDS so a runaway can't hammer
+# the API or exhaust memory. PAGE_DELAY paces requests under Zoho's
+# credits/minute rate limit; a 429 triggers exponential back-off.
+ZOHO_PAGE_SIZE = 200
+MAX_RECORDS = 50_000
+PAGE_DELAY = 0.2
+MAX_429_RETRIES = 5
+
 ZOHO_CRM_BASES = {
     "us": "https://www.zohoapis.com/crm/v3",
     "eu": "https://www.zohoapis.eu/crm/v3",
@@ -184,14 +193,57 @@ class ZohoCrmClient:
         if row.get("status") not in ("success", None):
             raise ZohoCrmError(0, f"update {module}/{record_id} failed: {str(row)[:400]}")
 
-    def list_accounts(self, page: int = 1, per_page: int = 200) -> list[dict]:
-        """Return CRM Account records with contact fields."""
-        fields = "Account_Name,Phone,Email,Billing_City,Billing_State,Owner,Website"
-        try:
-            data = self._get("Accounts", {
+    def _get_page_with_retry(self, module: str, params: dict) -> dict:
+        """One page GET that backs off and retries on Zoho's 429 rate limit."""
+        delay = 1.0
+        for attempt in range(MAX_429_RETRIES + 1):
+            try:
+                return self._get(module, params)
+            except ZohoCrmError as exc:
+                if exc.status_code == 429 and attempt < MAX_429_RETRIES:
+                    logger.warning(
+                        "Zoho CRM 429 on %s page %s — backing off %.1fs (attempt %d/%d)",
+                        module, params.get("page"), delay, attempt + 1, MAX_429_RETRIES,
+                    )
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                raise
+
+    def _list_all(self, module: str, fields: str, max_records: int = MAX_RECORDS) -> list[dict]:
+        """Paginate a module until Zoho reports no more records (or the cap is
+        hit). Zoho's response carries info.more_records=true while pages remain.
+        """
+        rows: list[dict] = []
+        page = 1
+        while len(rows) < max_records:
+            data = self._get_page_with_retry(module, {
                 "fields": fields,
                 "page": page,
-                "per_page": min(per_page, 200),
+                "per_page": ZOHO_PAGE_SIZE,
+            })
+            batch = data.get("data", [])
+            rows.extend(batch)
+            info = data.get("info") or {}
+            if not info.get("more_records") or not batch:
+                break
+            page += 1
+            time.sleep(PAGE_DELAY)
+        if len(rows) > max_records:
+            rows = rows[:max_records]
+        return rows
+
+    _ACCOUNT_FIELDS = "Account_Name,Phone,Email,Billing_City,Billing_State,Owner,Website"
+    _CONTACT_FIELDS = "First_Name,Last_Name,Phone,Email,Account_Name,Mobile,Mailing_City,Mailing_State"
+
+    def list_accounts(self, page: int = 1, per_page: int = 200) -> list[dict]:
+        """Return a SINGLE page of CRM Account records. For a full pull use
+        list_all_accounts()."""
+        try:
+            data = self._get("Accounts", {
+                "fields": self._ACCOUNT_FIELDS,
+                "page": page,
+                "per_page": min(per_page, ZOHO_PAGE_SIZE),
             })
             return data.get("data", [])
         except ZohoCrmError as exc:
@@ -199,18 +251,26 @@ class ZohoCrmClient:
             raise
 
     def list_contacts(self, page: int = 1, per_page: int = 200) -> list[dict]:
-        """Return CRM Contact records."""
-        fields = "First_Name,Last_Name,Phone,Email,Account_Name,Mobile,Mailing_City,Mailing_State"
+        """Return a SINGLE page of CRM Contact records. For a full pull use
+        list_all_contacts()."""
         try:
             data = self._get("Contacts", {
-                "fields": fields,
+                "fields": self._CONTACT_FIELDS,
                 "page": page,
-                "per_page": min(per_page, 200),
+                "per_page": min(per_page, ZOHO_PAGE_SIZE),
             })
             return data.get("data", [])
         except ZohoCrmError as exc:
             logger.warning("Zoho CRM list_contacts failed: %s", exc)
             raise
+
+    def list_all_accounts(self, max_records: int = MAX_RECORDS) -> list[dict]:
+        """Return EVERY CRM Account, paginating until exhausted or capped."""
+        return self._list_all("Accounts", self._ACCOUNT_FIELDS, max_records)
+
+    def list_all_contacts(self, max_records: int = MAX_RECORDS) -> list[dict]:
+        """Return EVERY CRM Contact, paginating until exhausted or capped."""
+        return self._list_all("Contacts", self._CONTACT_FIELDS, max_records)
 
 
 def get_zoho_crm_client() -> ZohoCrmClient:

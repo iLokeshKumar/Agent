@@ -137,18 +137,20 @@ def search_people(
     if not settings.rocketreach_api_key:
         logger.debug("RocketReach not configured — skipping search")
         return []
-    params: dict = {"page_size": min(page_size, 25)}
+    # RocketReach v2 /search is a POST with a JSON `query` object whose values
+    # are arrays; a GET returns 405 Method Not Allowed.
+    query: dict = {}
     if name:
-        params["name"] = name
+        query["name"] = [name]
     if company:
-        params["current_employer"] = company
+        query["current_employer"] = [company]
     if location:
-        params["location"] = location
+        query["location"] = [location]
     try:
-        r = httpx.get(
+        r = httpx.post(
             f"{BASE}/search",
-            params=params,
-            headers={"Api-Key": settings.rocketreach_api_key},
+            json={"query": query, "page_size": min(page_size, 25)},
+            headers=_headers(),
             timeout=15,
         )
         if r.status_code == 402:

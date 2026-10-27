@@ -56,6 +56,23 @@ class ZohoSyncer:
                 "reason": "Zoho Books not configured",
             }
 
+        try:
+            client.ensure_authenticated()
+        except ZohoBooksError as exc:
+            logger.error("Zoho sync skipped because authentication failed: %s", exc)
+            results = {
+                target: {"status": "error", "error": str(exc)}
+                for target in SYNC_TARGETS
+            }
+            self.errors.update({target: str(exc) for target in SYNC_TARGETS})
+            self._write_sync_status(results)
+            return {
+                "status": "error",
+                "error": str(exc),
+                "results": results,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
         logger.info("Starting full Zoho data sync")
         results = {}
 

@@ -34,3 +34,6 @@ phonenumbers==9.0.39
 playwright==1.63.0
 mcp==2.2.0
 cryptography>=44.0.0
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+pypdf>=4.0.0

@@ -326,7 +326,14 @@ def _send_smtp(subject: str, body: str) -> bool:
 
 
 def _send_whatsapp(body: str, db: Session) -> bool:
-    """Send plain-text digest via WhatsApp BSP (Gallabox/Gupshup text message)."""
+    """Send plain-text digest via WhatsApp BSP (Gallabox/Gupshup/Meta/Twilio).
+
+    Delegates to the canonical BSP sender (mcp_servers.whatsapp.server) so the
+    per-provider auth header, endpoint and payload shape live in one place.
+    This previously hand-rolled a Gallabox call with the wrong auth header
+    ('x-api-key' instead of 'apiSecret'), an extra '/v1/messages' on the URL and
+    a non-Gallabox payload shape — which 401'd on every digest.
+    """
     from app.core.config import settings
     if not settings.waba_api_key or not settings.waba_api_url:
         logger.info("WhatsApp not configured — skipping WA digest")
@@ -336,19 +343,9 @@ def _send_whatsapp(body: str, db: Session) -> bool:
         logger.warning("digest_recipient_wa not set — skipping WA digest")
         return False
     try:
-        payload = {
-            "channelId": settings.waba_phone_number_id,
-            "channelType": "whatsapp",
-            "recipient": {"phone": recipient},
-            "message": {"type": "text", "text": body},
-        }
-        resp = httpx.post(
-            f"{settings.waba_api_url}/v1/messages",
-            json=payload,
-            headers={"x-api-key": settings.waba_api_key},
-            timeout=15,
-        )
-        resp.raise_for_status()
+        from mcp_servers.whatsapp.server import send_session_message
+        result = send_session_message(to=recipient, body=body)
+        resp_body = result.get("response") if isinstance(result, dict) else None
         db.add(MessageLog(
             direction="out",
             channel="wa",
@@ -356,7 +353,7 @@ def _send_whatsapp(body: str, db: Session) -> bool:
             to_ref=recipient,
             msisdn=recipient.lstrip("+"),
             status="sent",
-            provider_msg_id=(resp.json() or {}).get("messageId"),
+            provider_msg_id=(resp_body.get("messageId") if isinstance(resp_body, dict) else None),
         ))
         db.commit()
         logger.info("Digest sent via WhatsApp to %s", recipient)

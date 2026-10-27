@@ -582,15 +582,21 @@ def _campaigns_shell():
                 Button(
                     "Reload", cls="ghost", id="cmp-reload", style="font-size:.82rem",
                 ),
+                Button(
+                    "Check deliverability", cls="ghost", id="cmp-deliverability",
+                    style="font-size:.82rem",
+                    title="Check SPF/DKIM/DMARC for your sending domain before you send",
+                ),
                 Button("+ New Campaign", cls="primary", id="cmp-new", style="font-size:.85rem"),
                 cls="cmp-toolbar",
             ),
             style="display:flex;align-items:center;gap:1rem;margin-bottom:1.25rem",
         ),
+        Div(id="cmp-deliverability-panel", style="display:none;margin-bottom:1rem"),
         Div(P("Loading campaigns…", cls="muted"), id="cmp-list-wrap"),
         Div(id="cmp-detail", style="display:none"),
         _campaigns_wizard_modal(),
-        Script(src="/assets/campaigns.js?v=12"),
+        Script(src="/assets/campaigns.js?v=13"),
         id="campaigns",
         cls="panel span-2",
     )
@@ -827,6 +833,8 @@ def _template_form(t=None):
                     Option("Insert field…", value="", selected=True),
                     Option("Name", value="{{ name }}"),
                     Option("First name", value="{{ first_name }}"),
+                    Option("Last name", value="{{ last_name }}"),
+                    Option("Salutation (Mr./Ms./Dr.)", value="{{ salutation }}"),
                     Option("Company / Account name", value="{{ company }}"),
                     Option("Title", value="{{ title }}"),
                     Option("Role", value="{{ role }}"),
@@ -856,6 +864,19 @@ def _template_form(t=None):
             P("Rich text is sent as HTML. Personalization tokens like {{ name }} are "
               "filled per-recipient at send time — use the “Insert field” menu to add them safely.",
               style="font-size:.72rem;color:var(--muted);margin:.3rem 0 0"),
+            cls="cmp-field",
+            style="margin-top:.5rem",
+        ),
+        Div(
+            Button("✓ Check content", cls="cmp-btn", type="button",
+                   hx_post="/htmx/templates/check",
+                   hx_include="#tmpl-f-id,#tmpl-f-channel,#tmpl-f-subject,#tmpl-f-body",
+                   hx_target="#tmpl-check-results", hx_swap="innerHTML",
+                   title="Check spelling, merge fields, links and attachments before sending"),
+            P("Catches typos, broken/misspelt merge fields, missing attachments and "
+              "(when a model provider is configured) spelling & grammar — before any customer sees it.",
+              cls="muted", style="font-size:.72rem;margin:.3rem 0 0"),
+            Div(id="tmpl-check-results", style="margin-top:.5rem"),
             cls="cmp-field",
             style="margin-top:.5rem",
         ),
@@ -2024,7 +2045,19 @@ async def htmx_create_template(request: Request, db: Session = Depends(get_db)):
         )
         db.add(t)
         db.commit()
-        return _html(Span("✓ Template saved — you can now attach files above", cls="badge ok"))
+        # Re-render the form in EDIT mode (the template now exists), retargeting
+        # the swap to the whole form host instead of the inline notice. The
+        # attachment box only works once the row exists, so this flips the
+        # create form straight into the edit form with attachments live — no
+        # "save first, then reopen to attach" round-trip.
+        return HTMLResponse(
+            to_xml(Div(
+                Span("✓ Template saved — add attachments below, then set approval if needed.",
+                     cls="badge ok"),
+                _template_form(t),
+            )),
+            headers={"HX-Retarget": "#tmpl-form-host", "HX-Reswap": "innerHTML"},
+        )
     except Exception as exc:
         return _html(Notice(str(exc), "err"))
 
@@ -2112,6 +2145,84 @@ async def htmx_template_attach_delete(request: Request, db: Session = Depends(ge
         t.attachments_json = updated
         db.commit()
     return _tmpl_attach_list(t)
+
+
+def _render_check(lint: dict, pr: dict | None):
+    """FT fragment: the content-check results shown under the composer."""
+    items = []
+    blockers = lint.get("blockers", [])
+    warnings = lint.get("warnings", [])
+    if lint.get("ok"):
+        items.append(Span("✓ No blocking problems — safe to send.", cls="badge ok"))
+    else:
+        items.append(Span(
+            f"✕ {len(blockers)} blocking problem(s) — this template will NOT send until fixed.",
+            cls="badge", style="background:#7f1d1d;color:#fff"))
+
+    def _line(f, color):
+        detail = f.get("detail")
+        if isinstance(detail, list):
+            detail = ", ".join(str(d) for d in detail)
+        return Div(
+            Strong(f["message"], style=f"color:{color}"),
+            (P(str(detail), cls="muted", style="font-size:.72rem;margin:.1rem 0 0") if detail else None),
+            style="padding:.35rem .5rem;border:1px solid var(--panel-border);"
+                  "border-radius:6px;margin-top:.35rem")
+
+    for b in blockers:
+        items.append(_line(b, "#fca5a5"))
+    for w in warnings:
+        items.append(_line(w, "#fcd34d"))
+
+    if pr is None:
+        pass
+    elif not pr.get("available"):
+        items.append(P("Spelling/grammar check did not run: " + (pr.get("reason") or ""),
+                       cls="muted", style="font-size:.72rem;margin-top:.5rem"))
+    elif not pr.get("issues"):
+        items.append(P(f"✓ Spelling/grammar: no issues found ({pr.get('model') or 'model'}).",
+                       cls="muted", style="font-size:.72rem;margin-top:.5rem"))
+    else:
+        rows = [
+            Div(Strong(it.get("text", "")),
+                Span(" → " + it.get("fix", ""), style="color:#86efac"),
+                P(it.get("problem", ""), cls="muted", style="font-size:.7rem;margin:.1rem 0 0"),
+                style="padding:.35rem .5rem;border:1px solid var(--panel-border);"
+                      "border-radius:6px;margin-top:.35rem")
+            for it in pr["issues"]
+        ]
+        items.append(Div(H4("Spelling / grammar suggestions",
+                            style="margin:.6rem 0 .2rem;font-size:.8rem"), *rows))
+
+    return Div(*[i for i in items if i is not None])
+
+
+@router.post("/htmx/templates/check", include_in_schema=False)
+async def htmx_template_check(request: Request, db: Session = Depends(get_db)):
+    """Run the content-correctness check on the CURRENT composer contents
+    (not the saved row), so the author sees problems before saving/sending.
+    Attachments are read from the saved template when it exists."""
+    import types
+    from app.models.enterprise import TemplateRegistry
+    from app.services.campaign_lint import lint_template
+    from app.services.campaign_proofread import proofread as _proofread
+
+    form = await request.form()
+    tid = (form.get("template_id", "") or "").strip()
+    saved = db.get(TemplateRegistry, tid) if tid else None
+    tmpl = types.SimpleNamespace(
+        channel=form.get("channel", "email") or "email",
+        subject=form.get("subject") or None,
+        body=form.get("body", "") or "",
+        purpose=(getattr(saved, "purpose", "") or ""),
+        segment_overrides_json=getattr(saved, "segment_overrides_json", None),
+        attachments_json=getattr(saved, "attachments_json", None) or [],
+    )
+    # Static checks only here (no sample contact in the composer); the send
+    # gate repeats the check against a real recipient for blank-field detection.
+    lint = lint_template(tmpl, sample_contact=None, campaign=None, db=None)
+    pr = _proofread(form.get("subject") or "", form.get("body", "") or "")
+    return _html(_render_check(lint, pr))
 
 
 # NOTE: these {template_id} routes are declared AFTER the literal

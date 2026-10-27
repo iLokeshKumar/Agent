@@ -1,10 +1,12 @@
 """Hosted POP3/SMTP mailbox support with an internal approval draft box."""
 
 import email
+import logging
 import mimetypes
 import poplib
 import re
 import smtplib
+import threading
 import uuid
 from datetime import datetime, timezone
 from email.header import decode_header, make_header
@@ -14,6 +16,21 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.models.enterprise import EmailBounceEvent, EmailMessage
+
+# poplib caps a single response line at 2048 bytes, which real mail routinely
+# exceeds (long DKIM / List-Unsubscribe headers, unwrapped base64 image lines),
+# raising poplib.error_proto("line too long"). Raise the cap to a safe ceiling.
+poplib._MAXLINE = 1024 * 1024
+
+logger = logging.getLogger(__name__)
+
+# The hosted mailbox is single-session: it allows only one live POP3
+# connection at a time and drops the connection when a second overlaps. Three
+# callers can trigger a poll — the gateway mail_poll lane, POST /mail/poll, and
+# the dashboard's POST /htmx/mail/poll — and they all run in this same worker
+# process, so a process-wide lock serializes them. It is held only for the
+# duration of a poll (acquired non-blocking in poll_pop3 below).
+_poll_lock = threading.Lock()
 
 
 def configuration_status() -> dict:
@@ -324,6 +341,42 @@ def poll_pop3(db, limit: int = 25) -> list[EmailMessage]:
     if not configuration_status()["pop3_configured"]:
         raise RuntimeError("POP3 is not configured")
 
+    # Never open a second POP3 session while one is in flight — the mailbox is
+    # single-session and will drop the connection on overlap. If another poll
+    # already holds the lock, skip this one and return no new mail: the
+    # in-progress poll fetches everything, so there is nothing to wait for.
+    if not _poll_lock.acquire(blocking=False):
+        logger.info("POP3 poll already in progress — skipping this overlapping poll")
+        return []
+    try:
+        # A dropped connection still happens occasionally (provider throttling,
+        # a network blip) — either at connect (OSError) or mid-session during
+        # UIDL (poplib.error_proto '-ERR EOF'). Retry once so a transient drop
+        # self-heals within the same tick instead of surfacing as a 500/502.
+        attempts = 2
+        last_exc: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                return _poll_pop3_once(db, limit)
+            except (OSError, poplib.error_proto) as exc:
+                last_exc = exc
+                logger.warning(
+                    "POP3 poll attempt %d/%d failed: %s", attempt + 1, attempts, exc
+                )
+                # Reset the session after a partial/failed attempt so a retry
+                # (and anything else reusing this db) starts clean.
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+        # Both attempts failed — re-raise so the endpoint maps it to a 502.
+        assert last_exc is not None
+        raise last_exc
+    finally:
+        _poll_lock.release()
+
+
+def _poll_pop3_once(db, limit: int) -> list[EmailMessage]:
     client = poplib.POP3_SSL(settings.pop3_host, settings.pop3_port, timeout=30)
     try:
         client.user(settings.pop3_username)
@@ -334,8 +387,25 @@ def poll_pop3(db, limit: int = 25) -> list[EmailMessage]:
             number, uid = row.decode().split(maxsplit=1)
             if db.query(EmailMessage.id).filter_by(mailbox_uid=uid).first():
                 continue
-            lines = client.retr(int(number))[1]
-            message = email.message_from_bytes(b"\n".join(lines))
+            try:
+                lines = client.retr(int(number))[1]
+                message = email.message_from_bytes(b"\n".join(lines))
+            except Exception as exc:
+                # One unreadable message must not abort the whole poll. Persist a
+                # placeholder so this uid is skipped on the next tick instead of
+                # 500ing every poll forever (e.g. a line above the poplib cap).
+                logger.warning(
+                    "Skipping unretrievable message uid=%s: %s", uid, exc
+                )
+                db.add(EmailMessage(
+                    mailbox_uid=uid,
+                    direction="in",
+                    status="error",
+                    subject="[unretrievable message]",
+                    body=f"Could not retrieve/parse this message: {exc}",
+                    correlation_id=uuid.uuid4(),
+                ))
+                continue
             received.append(EmailMessage(
                 mailbox_uid=uid,
                 direction="in",

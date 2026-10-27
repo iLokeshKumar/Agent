@@ -13,5 +13,9 @@ backend/__pycache__/
 backend/**/*.py[cod]
 backend/*.pem
 backend/*.key
+backend/client_secret*.json
+backend/scripts/ngrok-yexis.yml
 backend/*service-account*.json
 backend/iyexis-firebase-adminsdk-*.json
+backend/.env
+backend/config/zoho_tokens.json

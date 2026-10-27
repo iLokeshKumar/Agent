@@ -38,6 +38,17 @@ def _require_config():
             f"Current: provider={settings.waba_provider!r} api_url={'set' if settings.waba_api_url else 'missing'}"
         )
 
+def _gallabox_headers() -> dict:
+    """Gallabox Dev API auth. BOTH apiKey (the 'request identifier') and
+    apiSecret are required — sending only one returns HTTP 401
+    'rate limiter: missing request identifier'."""
+    return {
+        "apiKey": settings.waba_api_key,
+        "apiSecret": settings.waba_api_secret,
+        "Content-Type": "application/json",
+    }
+
+
 def _normalize_msisdn(to: str) -> str:
     # E.164 without '+', 10-15 digits
     raw = re.sub(r"[^\d]", "", to)
@@ -62,8 +73,7 @@ def send_template(to: str, template_name: str, language: str = "en", params: dic
         # Spec: https://docs.gallabox.com — endpoint varies by account, waba_api_url is full URL
         # Expected body: {"channelId": "...", "channelType":"whatsapp", "recipient": {"phone": msisdn}, "whatsapp": {"type":"template", "template": {"templateName": ..., "bodyValues": {...}}}}
         # We implement minimal compatible payload and surface Gallabox error verbatim
-        headers = {"apiSecret": settings.waba_api_key, "Content-Type": "application/json"}
-        # include apikey variant too for兼容
+        headers = _gallabox_headers()
         body = {
             "channelId": settings.waba_phone_number_id or settings.waba_app_name or "whatsapp",
             "channelType": "whatsapp",
@@ -155,7 +165,7 @@ def send_session_message(to: str, body: str, media_url: str | None = None) -> di
     provider = settings.waba_provider.lower()
     logger.info("WABA session provider=%s to=%s body_len=%d", provider, msisdn, len(body))
     if provider == "gallabox":
-        headers = {"apiSecret": settings.waba_api_key, "Content-Type": "application/json"}
+        headers = _gallabox_headers()
         payload = {
             "channelId": settings.waba_phone_number_id or settings.waba_app_name or "whatsapp",
             "channelType": "whatsapp",
@@ -198,7 +208,7 @@ def send_interactive_button(
     logger.info("WABA send_interactive_button provider=%s to=%s", provider, msisdn)
 
     if provider == "gallabox":
-        headers = {"apiSecret": settings.waba_api_key, "Content-Type": "application/json"}
+        headers = _gallabox_headers()
         interactive_buttons = [
             {"type": "reply", "reply": {"id": b["id"], "title": b["title"][:20]}}
             for b in buttons

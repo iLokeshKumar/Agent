@@ -1,6 +1,7 @@
 """Manual POP3 intake and internal, approval-only SMTP drafts."""
 
 import mimetypes
+import poplib
 import uuid
 from pathlib import Path
 
@@ -37,13 +38,35 @@ def health():
     return configuration_status()
 
 
+@router.get("/deliverability")
+def deliverability(domain: str | None = None, selector: str | None = None):
+    """Check SPF / DKIM / DMARC for the sending domain via live DNS lookups.
+
+    These three records are the biggest factor in inbox-vs-spam for bulk mail.
+    Run this before a campaign to confirm the domain is authenticated.
+
+    Query params (optional):
+      domain   — domain to check (default: the domain of SMTP_FROM)
+      selector — a DKIM selector to try first (if you use a custom one)
+
+    Returns per-record status (pass/warn/fail), the record found, a plain
+    explanation, and an overall verdict.
+    """
+    from app.services.deliverability import check_deliverability
+    return check_deliverability(domain=domain, extra_selectors=selector)
+
+
 @router.post("/poll")
 def poll(limit: int = 25, db: Session = Depends(get_db)):
     try:
         rows = poll_pop3(db, max(1, min(limit, 100)))
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except OSError as exc:
+    except (OSError, poplib.error_proto) as exc:
+        # OSError = connect-level failure; poplib.error_proto = the server
+        # dropping the session mid-command (e.g. '-ERR EOF' during UIDL when a
+        # single-session mailbox is hit by overlapping pollers). Both are
+        # transient POP3 connection problems, not bugs — map to 502, not 500.
         raise HTTPException(
             status_code=502,
             detail=(

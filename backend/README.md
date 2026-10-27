@@ -144,6 +144,41 @@ uvicorn gateway.main:app --port 8001
 
 Backend must be up first — gateway posts tasks to `BACKEND_URL` (default `http://127.0.0.1:8000`, in Docker `http://backend:8000`).
 
+### Public tunnel — required for campaign email links
+
+Every campaign email bakes `APPROVAL_BASE_URL` into its click-tracking, open-pixel,
+unsubscribe and pre-filled-form links. It **must be a stable public hostname** — if
+it changes, those links in already-sent mail break. **Do not use a Cloudflare quick
+tunnel** (`*.trycloudflare.com`): it rotates on every restart. The app logs a startup
+warning if it detects one.
+
+This machine uses **two ngrok agents, one per ngrok account** (a reserved ngrok
+domain belongs to one account, and the free "1 session" limit is per account, so two
+accounts run side by side):
+
+| Agent | Account | Port | Permanent domain | Inspector |
+|---|---|---|---|---|
+| Twilio (`my-backend`, default `~/.ngrok/ngrok.yml`) | X | 6060 | `brayan-misshapen-lu.ngrok-free.dev` | 4040 |
+| Yexis app (`scripts/ngrok-yexis.yml`) | Y | 8000 | `arrange-coagulant-garnet.ngrok-free.dev` | 4041 |
+
+`APPROVAL_BASE_URL=https://arrange-coagulant-garnet.ngrok-free.dev`. Start the Yexis
+tunnel in its own terminal, **in addition** to the Twilio one:
+
+```powershell
+# Terminal — Yexis ngrok (account Y). Twilio ngrok keeps running separately.
+powershell -File scripts/start_tunnel.ps1
+```
+
+Notes:
+- After changing `APPROVAL_BASE_URL`, **fully restart** uvicorn (env loads only at
+  startup; `--reload` is not enough).
+- `scripts/ngrok-yexis.yml` holds account Y's authtoken and is **git-ignored** — never
+  commit it. To set up on a new machine, reserve the static domain at
+  https://dashboard.ngrok.com/domains and put that account's authtoken in the file.
+- Links only resolve while this machine is running uvicorn + the tunnel.
+- ngrok's free tier shows a browser interstitial on first click; the ~$8/mo plan
+  removes it on the same domain.
+
 ## Environment Variables
 
 Copy `backend/.env.example` → `backend/.env`. All settings are loaded via `app/core/config.py` (pydantic-settings).
@@ -176,6 +211,7 @@ Copy `backend/.env.example` → `backend/.env`. All settings are loaded via `app
 | `TALLY_PORT` | No | `9000` | Tally HTTP port |
 | `TALLY_COMPANY` | No | `Yexis Electronics Pvt Ltd` | Default Tally company name |
 | `MAIL_SEND_ENABLED` | No | `false` | Allow explicit SMTP send of approved outbound drafts |
+| `APPROVAL_BASE_URL` | For campaign email | `http://localhost:8000` | Stable public base URL for tracking/unsubscribe/form links — see [Public tunnel](#public-tunnel--required-for-campaign-email-links). Must not be a `*.trycloudflare.com` quick tunnel. |
 | `BACKEND_URL` | Gateway only | `http://127.0.0.1:8000` | Backend URL for scheduler |
 | `LANE_F3_SECONDS` | No | `86400` | Nightly sync cadence seconds |
 | `GATEWAY_WEBHOOK_SECRET_WABA` | No | `""` | HMAC secret for WhatsApp |

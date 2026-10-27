@@ -228,8 +228,177 @@
       renderList();
       if (state.selected) renderDetail(state.selected);
       else { $("cmp-detail").style.display = "none"; }
+      markPolled();
     } catch (error) {
       wrap.innerHTML = `<p class="cmp-msg" role="alert">Could not load campaigns: ${esc(error.message)}</p>`;
+    }
+  }
+
+  // ── Silent background refresh ──────────────────────────────────────────
+  // Campaign sends trickle out over hours (K3 caps each tick), so the list
+  // and the open detail panel would otherwise sit frozen until a manual
+  // Reload. This polls quietly in the background: it never shows the
+  // "Loading…" flash, patches only the live numbers/status in place, and
+  // never touches a control you're interacting with.
+  const POLL_MS = 10000;
+  let pollTimer = null;
+  let lastPolledAt = 0;
+
+  // True while the user is focused on an input/select/textarea inside the
+  // detail panel — we must not rebuild those controls out from under them.
+  function detailHasFocus() {
+    const el = document.activeElement;
+    return !!(el && el.closest("#cmp-detail") &&
+              /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName));
+  }
+
+  // Patch just the display-only numbers/status — safe to call any time, it
+  // touches no interactive control and never steals focus.
+  function patchDetail(c) {
+    const badge = $("cmp-m-statusbadge");
+    if (badge) {
+      badge.textContent = statusNames[c.status] || c.status;
+      badge.className = `cmp-status status-${c.status}`;
+    }
+    const typeStatus = $("cmp-m-typestatus");
+    if (typeStatus) typeStatus.textContent =
+      `${typeNames[c.campaign_type] || c.campaign_type} · ${statusNames[c.status] || c.status}`;
+    const audSent = $("cmp-m-audsent");
+    if (audSent) audSent.textContent = `${num(c.audience_count)} / ${num(c.sent_count)}`;
+    const audLine = $("cmp-m-audienceline");
+    if (audLine) audLine.textContent = `${num(c.audience_count)} contacts · ${num(c.sent_count)} sent`;
+  }
+
+  async function silentLoad() {
+    try {
+      const entity = encodeURIComponent($("cmp-entity-filter")?.value || "YEXIS-EL");
+      const response = await fetch(
+        `/campaigns?entity=${entity}&limit=${state.pageSize}&offset=${(state.page - 1) * state.pageSize}`
+      );
+      if (!response.ok) return;              // silent — never disturb the UI on a transient error
+      const data = await response.json().catch(() => null);
+      if (!Array.isArray(data)) return;
+      state.campaigns = data;
+      state.totalCampaigns = Number(response.headers.get("X-Total-Count") || data.length);
+      renderList();                          // list has no inputs — always safe to rebuild
+      if (state.selected) {
+        const fresh = state.campaigns.find((c) => c.campaign_id === state.selected.campaign_id);
+        if (fresh) {
+          state.selected = fresh;
+          const box = $("cmp-detail");
+          // Status changed → the workflow controls differ, so a full re-render
+          // is needed, but only when the user isn't mid-edit. Otherwise just
+          // patch the numbers in place.
+          if (box && box.dataset.renderedStatus !== fresh.status && !detailHasFocus()) {
+            renderDetail(fresh, { scroll: false });
+          } else {
+            patchDetail(fresh);
+          }
+        }
+      }
+      markPolled();
+    } catch (_e) {
+      /* network blip — try again on the next tick */
+    }
+  }
+
+  function ensurePollLabel() {
+    let el = $("cmp-poll-status");
+    if (!el) {
+      const reload = $("cmp-reload");
+      if (!reload || !reload.parentNode) return null;
+      el = document.createElement("span");
+      el.id = "cmp-poll-status";
+      el.className = "muted";
+      el.style.cssText = "font-size:.72rem;margin-left:.5rem;white-space:nowrap";
+      reload.parentNode.insertBefore(el, reload.nextSibling);
+    }
+    return el;
+  }
+
+  function updatePolledLabel() {
+    const el = ensurePollLabel();
+    if (!el || !lastPolledAt) return;
+    const secs = Math.round((Date.now() - lastPolledAt) / 1000);
+    el.textContent = secs < 5 ? "● live · just now" : `● live · updated ${secs}s ago`;
+  }
+
+  function markPolled() {
+    lastPolledAt = Date.now();
+    updatePolledLabel();
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(() => {
+      if (document.hidden) return;                                   // tab in background
+      if (document.querySelector("#cmp-wizard.open, #tmpl-modal.open")) return;  // a dialog is open
+      silentLoad();
+    }, POLL_MS);
+    setInterval(updatePolledLabel, 1000);   // keep the "Xs ago" label ticking
+    // Returning to the tab after a while: refresh at once rather than waiting.
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) silentLoad();
+    });
+  }
+
+  // ── Deliverability (SPF/DKIM/DMARC) panel ──────────────────────────────
+  const DELIV_COLORS = { pass: "#4ade80", warn: "#fbbf24", fail: "#f87171" };
+  const DELIV_ICON = { pass: "✓", warn: "!", fail: "✕" };
+
+  function renderDeliverability(d) {
+    if (d.error) {
+      return `<div class="cmp-msg" role="alert">Could not check deliverability: ${esc(d.error)}</div>`;
+    }
+    const chip = (label, rec) => {
+      const st = rec.status || "warn";
+      const color = DELIV_COLORS[st] || "#9ca3af";
+      const found = rec.record
+        ? `<div class="muted" style="font-size:.7rem;margin-top:.25rem;word-break:break-all;font-family:monospace">${esc(Array.isArray(rec.record) ? rec.record.join(" | ") : rec.record)}</div>`
+        : "";
+      return `<div style="border:1px solid var(--panel-border);border-left:3px solid ${color};border-radius:8px;padding:.55rem .7rem">
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <span style="color:${color};font-weight:700">${DELIV_ICON[st] || "?"}</span>
+          <strong style="font-size:.82rem">${esc(label)}</strong>
+          <span style="color:${color};font-size:.72rem;text-transform:uppercase;font-weight:700">${esc(st)}</span>
+        </div>
+        <div style="font-size:.76rem;margin-top:.25rem">${esc(rec.message || "")}</div>
+        ${found}
+      </div>`;
+    };
+    const overall = d.overall || "warn";
+    const oc = DELIV_COLORS[overall] || "#9ca3af";
+    const notes = (d.notes || []).map((n) => `<li>${esc(n)}</li>`).join("");
+    return `<div style="border:1px solid var(--panel-border);border-radius:12px;padding:1rem;background:rgba(255,255,255,.03)">
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.7rem">
+        <strong style="font-size:.9rem">Sending domain: ${esc(d.domain || "—")}</strong>
+        <span style="background:${oc};color:#0b1020;font-weight:700;font-size:.72rem;padding:.15rem .55rem;border-radius:999px;text-transform:uppercase">${esc(overall)}</span>
+        <span class="muted" style="font-size:.72rem;margin-left:auto">${esc(d.from_address || "")}</span>
+        <button class="cmp-btn" data-cmp="close-deliverability" style="font-size:.72rem">Close</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.6rem">
+        ${chip("SPF", d.spf || {})}${chip("DKIM", d.dkim || {})}${chip("DMARC", d.dmarc || {})}
+      </div>
+      ${notes ? `<ul class="muted" style="font-size:.74rem;margin:.7rem 0 0;padding-left:1.1rem">${notes}</ul>` : ""}
+    </div>`;
+  }
+
+  async function checkDeliverability() {
+    const panel = $("cmp-deliverability-panel");
+    const btn = $("cmp-deliverability");
+    if (!panel) return;
+    panel.style.display = "block";
+    panel.innerHTML = '<p class="muted">Checking SPF, DKIM and DMARC…</p>';
+    if (btn) btn.disabled = true;
+    try {
+      const resp = await fetch("/mail/deliverability");
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || data.error || `Request failed (${resp.status})`);
+      panel.innerHTML = renderDeliverability(data);
+    } catch (e) {
+      panel.innerHTML = `<div class="cmp-msg" role="alert">Could not check deliverability: ${esc(e.message)}</div>`;
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
@@ -265,15 +434,15 @@
     wrap.innerHTML = header + rows + pagination;
   }
 
-  function renderDetail(c) {
+  function renderDetail(c, opts = {}) {
     const box = $("cmp-detail");
     if (!box) return;
     state.selected = c;
     const id = esc(c.campaign_id);
     const audienceBuilt = c.status === "audience_built";
     const hasAudience = Number(c.audience_count || 0) > 0;
-    const sourceOptions = ["dealermart", "zoho_books", "zoho_crm", "all", "apollo"]
-      .map((src) => `<option value="${src}">${({dealermart:"DealerMart",zoho_books:"Zoho Books",zoho_crm:"Zoho CRM",all:"All available sources",apollo:"Apollo prospects"})[src]}</option>`).join("");
+    const sourceOptions = ["dealermart", "zoho_books", "zoho_crm", "all", "apollo", "rocketreach", "justdial", "scribd", "google_drive"]
+      .map((src) => `<option value="${src}">${({dealermart:"DealerMart",zoho_books:"Zoho Books",zoho_crm:"Zoho CRM",all:"All available sources",apollo:"Apollo prospects",rocketreach:"RocketReach",justdial:"JustDial",scribd:"Scribd document",google_drive:"Google Drive"})[src]}</option>`).join("");
     const templateOptions = templateOptionsHtml(c.message_template_id);
     const channelOptions = Object.entries(channelNames).map(([key, label]) =>
       `<option value="${key}" ${(c.default_channel || "auto") === key ? "selected" : ""}>${label}</option>`
@@ -300,7 +469,7 @@
         </div>
       </label>
       <p class="muted" style="font-size:.74rem">Tests use placeholder values (e.g. “Sample Name”) until an audience exists; once contacts are added, tests render with a real sample contact.</p>` : `
-      <h4>1 · Audience</h4><p>${Number(c.audience_count || 0)} contacts · ${Number(c.sent_count || 0)} sent</p>`;
+      <h4>1 · Audience</h4><p id="cmp-m-audienceline">${Number(c.audience_count || 0)} contacts · ${Number(c.sent_count || 0)} sent</p>`;
     const delivery = audienceBuilt ? `
       <h4>2 · Review and send</h4>
       <div class="cmp-toolbar">
@@ -339,8 +508,8 @@
     const metrics = `<div class="cmp-detail-grid">
       <div class="cmp-msg"><small>Name</small><br><strong>${esc(c.name)}</strong></div>
       <div class="cmp-msg"><small>Entity</small><br><strong>${esc(entityNames[c.entity] || c.entity)}</strong></div>
-      <div class="cmp-msg"><small>Type / status</small><br><strong>${esc(typeNames[c.campaign_type] || c.campaign_type)} · ${esc(statusNames[c.status] || c.status)}</strong></div>
-      <div class="cmp-msg"><small>Audience / sent</small><br><strong>${Number(c.audience_count || 0)} / ${Number(c.sent_count || 0)}</strong></div>
+      <div class="cmp-msg"><small>Type / status</small><br><strong id="cmp-m-typestatus">${esc(typeNames[c.campaign_type] || c.campaign_type)} · ${esc(statusNames[c.status] || c.status)}</strong></div>
+      <div class="cmp-msg"><small>Audience / sent</small><br><strong id="cmp-m-audsent">${Number(c.audience_count || 0)} / ${Number(c.sent_count || 0)}</strong></div>
       <div class="cmp-msg"><small>Dates</small><br><strong>${esc(c.start_date || "—")} → ${esc(c.end_date || "—")}</strong></div>
       <div class="cmp-msg"><small>Budget</small><br><strong>${c.budget == null ? "—" : `₹${Number(c.budget).toLocaleString("en-IN")}`}</strong></div>
     </div>`;
@@ -350,11 +519,15 @@
       <div id="cmp-form-editor-${id}">
         <button class="cmp-btn" data-cmp="edit-form" data-id="${id}">Edit form fields</button>
       </div>`;
-    box.innerHTML = `<div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap"><h3 style="margin:0;flex:1">${esc(c.name)}</h3><span class="cmp-status status-${esc(c.status)}">${esc(statusNames[c.status] || c.status)}</span><button class="cmp-btn" data-cmp="close-detail">Close</button></div>
+    box.innerHTML = `<div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap"><h3 style="margin:0;flex:1">${esc(c.name)}</h3><span id="cmp-m-statusbadge" class="cmp-status status-${esc(c.status)}">${esc(statusNames[c.status] || c.status)}</span><button class="cmp-btn" data-cmp="close-detail">Close</button></div>
       ${metrics}<div id="cmp-detail-message-${id}" class="cmp-msg" style="display:none"></div>${workflow}${delivery}${formEditor}${tracking}
       <div id="cmp-output-${id}" class="cmp-msg" style="display:none;max-height:20rem;overflow:auto"></div>`;
     box.style.display = "block";
-    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // Remember what status the controls were built for, so the silent poll
+    // knows when a full re-render is needed (controls change) vs. a cheap
+    // in-place number patch (see patchDetail).
+    box.dataset.renderedStatus = c.status;
+    if (opts.scroll !== false) box.scrollIntoView({ behavior: "smooth", block: "nearest" });
     syncApproveButton(id);
   }
 
@@ -477,7 +650,7 @@
   }
 
   // ── Zoho-style column mapping before import ──────────────────────────────────
-  const STD_TARGETS = ["name", "first_name", "email", "phone", "company", "ignore"];
+  const STD_TARGETS = ["name", "first_name", "salutation", "email", "phone", "company", "ignore"];
 
   function ensureMapModal() {
     let ov = $("cmp-map-overlay");
@@ -849,6 +1022,11 @@
 
   async function doAction(action, id, button) {
     if (action === "close-detail") { $("cmp-detail").style.display = "none"; return; }
+    if (action === "close-deliverability") {
+      const p = $("cmp-deliverability-panel");
+      if (p) { p.style.display = "none"; p.innerHTML = ""; }
+      return;
+    }
     const campaign = state.campaigns.find((c) => c.campaign_id === id);
     if (!campaign) return;
     if (action === "view") { renderDetail(campaign); return; }
@@ -910,8 +1088,27 @@
         return;
       } else if (action === "audience") {
         const source = $(`cmp-source-${id}`).value;
+        const body = { source };
+        // Sources that need an extra input before they can build.
+        if (source === "scribd") {
+          const url = window.prompt("Paste the Scribd / document download URL (PDF, Excel, or CSV):");
+          if (!url) return;
+          body.document_url = url.trim();
+        } else if (source === "google_drive") {
+          const link = window.prompt("Paste a Google Drive file/folder link or id (leave blank to use the default folder):");
+          if (link && link.trim()) {
+            const v = link.trim();
+            if (/\/folders\//.test(v)) body.folder_id = (v.match(/\/folders\/([a-zA-Z0-9_-]+)/) || [])[1] || v;
+            else body.drive_link = v;
+          }
+        } else if (source === "justdial") {
+          const kw = window.prompt("JustDial search — keywords/category (e.g. 'electronics dealers'):");
+          if (kw && kw.trim()) body.keywords = kw.trim();
+          const city = window.prompt("JustDial search — city (optional):");
+          if (city && city.trim()) body.location = city.trim();
+        }
         result = await request(`/campaigns/${encodeURIComponent(id)}/audience`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source }),
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
       } else if (action === "send" || action === "schedule") {
         const template = $(`cmp-template-${id}`).value;
@@ -964,6 +1161,7 @@
     if (event.target === event.currentTarget) event.currentTarget.classList.remove("open");
   });
   $("cmp-reload").addEventListener("click", () => loadCampaigns());
+  $("cmp-deliverability")?.addEventListener("click", checkDeliverability);
   $("cmp-entity-filter").addEventListener("change", () => {
     state.page = 1;
     loadCampaigns(false);
@@ -975,4 +1173,5 @@
   });
   loadTemplates();
   loadCampaigns(false);
+  startPolling();
 })();

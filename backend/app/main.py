@@ -23,6 +23,39 @@ logger = logging.getLogger(__name__)
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "static"
 
 
+def _check_public_base_url():
+    """Warn loudly when APPROVAL_BASE_URL can't survive a restart.
+
+    Every campaign email bakes this host into its click-tracking, open-pixel,
+    unsubscribe and pre-filled-form links. If the host changes, those links in
+    already-sent mail die. A Cloudflare *quick* tunnel (*.trycloudflare.com)
+    gets a new random hostname on every restart — the single biggest source of
+    "the links in my email are broken" — so flag it, and localhost (which no
+    external recipient can ever reach), at startup.
+    """
+    from app.core.config import settings
+    base = (settings.approval_base_url or "").strip().lower()
+
+    if "trycloudflare.com" in base:
+        logger.warning(
+            "APPROVAL_BASE_URL is a Cloudflare QUICK tunnel (%s). Its hostname "
+            "changes on every restart, so tracking/unsubscribe/form links in "
+            "already-sent emails WILL break. Use a Cloudflare NAMED tunnel bound "
+            "to your own domain (e.g. https://track.yexiselectronics.com) - see "
+            "APPROVAL_BASE_URL in .env.example.",
+            settings.approval_base_url,
+        )
+    elif not base or "localhost" in base or "127.0.0.1" in base:
+        logger.warning(
+            "APPROVAL_BASE_URL is %r — not a public host. Email tracking, "
+            "unsubscribe and form links will not work for real recipients. Set "
+            "it to a stable public URL before broadcasting.",
+            settings.approval_base_url,
+        )
+    else:
+        logger.info("APPROVAL_BASE_URL = %s", settings.approval_base_url)
+
+
 def _init_database():
     """Create tables and seed default data on first run."""
     from app.core.db import engine, SessionLocal
@@ -288,6 +321,7 @@ def _ensure_sequence(
 async def lifespan(app: FastAPI):
 
     _init_database()
+    _check_public_base_url()
     worker.start()
     get_sync_scheduler().start()
     get_nightly_scheduler().start()
@@ -408,6 +442,9 @@ app.include_router(mcp_rocketreach_router)
 
 from app.api.mcp_zoho import router as mcp_zoho_router  # noqa: E402
 app.include_router(mcp_zoho_router)
+
+from app.api.auth_zoho_mcp import router as auth_zoho_mcp_router  # noqa: E402
+app.include_router(auth_zoho_mcp_router)
 
 from app.api.f2_claims import router as f2_claims_router  # noqa: E402
 app.include_router(f2_claims_router)

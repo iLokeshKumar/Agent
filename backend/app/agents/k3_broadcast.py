@@ -57,7 +57,7 @@ def _build_template_params(template, contact, campaign) -> dict | None:
     return {str(k): str(ctx.get(v, v)) for k, v in var_map.items()} or None
 
 
-def _render_template(body: str, ctx: dict) -> str:
+def _render_template(body: str, ctx: dict, mark_unknown: bool = False) -> str:
     """Render a Jinja2 template body with campaign context.
 
     Supports the full Jinja2 syntax:
@@ -69,6 +69,12 @@ def _render_template(body: str, ctx: dict) -> str:
     Missing variables render as '' (via _SilentUndefined) so a bad
     context key never breaks a live send.  Render errors are caught and
     logged; the raw body is returned as a safe fallback.
+
+    mark_unknown=True renders an undefined variable as a loud «name?» marker
+    instead of a silent blank. Used for TEST sends (see campaigns test-send)
+    so a typo'd merge field jumps out in the author's own inbox — real
+    broadcasts always render clean (and are blocked upstream by the content
+    gate anyway).
     """
     from jinja2 import Environment, Undefined
 
@@ -84,7 +90,16 @@ def _render_template(body: str, ctx: dict) -> str:
         def __getattr__(self, key): return _SilentUndefined()
         def __getitem__(self, key): return _SilentUndefined()
 
-    env = Environment(undefined=_SilentUndefined, autoescape=False)
+    class _MarkingUndefined(_SilentUndefined):
+        """Undefined variables → a visible «name?» marker (test sends only)."""
+        def __str__(self):
+            return f"«{self._undefined_name}?»"
+        def __bool__(self): return True
+
+    env = Environment(
+        undefined=_MarkingUndefined if mark_unknown else _SilentUndefined,
+        autoescape=False,
+    )
     clean_ctx = {k: ("" if v is None else v) for k, v in ctx.items()}
     try:
         return env.from_string(body).render(**clean_ctx)
@@ -93,7 +108,7 @@ def _render_template(body: str, ctx: dict) -> str:
         return body
 
 
-def _resolve_body(template, contact, campaign, db=None, extra_ctx=None) -> str:
+def _resolve_body(template, contact, campaign, db=None, extra_ctx=None, mark_unknown=False) -> str:
     """Render template.body: {{field}} substitution + {{#if}} conditionals,
     with the context optionally enriched by live data (see
     app.services.dynamic_email), an explicit extra_ctx override (used by
@@ -125,7 +140,7 @@ def _resolve_body(template, contact, campaign, db=None, extra_ctx=None) -> str:
     if seg.get("append"):
         body = body + seg["append"]
 
-    return _render_template(body, ctx)
+    return _render_template(body, ctx, mark_unknown=mark_unknown)
 
 
 def _segment_override(template, contact_type: str) -> dict:
@@ -133,7 +148,7 @@ def _segment_override(template, contact_type: str) -> dict:
     return overrides.get(contact_type) or {}
 
 
-def _resolve_subject(template, contact, campaign, extra_ctx=None) -> str:
+def _resolve_subject(template, contact, campaign, extra_ctx=None, mark_unknown=False) -> str:
     """Segment-aware subject line.
 
     Priority: segment_override subject > template.subject > template.purpose > campaign name
@@ -144,28 +159,57 @@ def _resolve_subject(template, contact, campaign, extra_ctx=None) -> str:
         ctx.update(extra_ctx)
     seg = _segment_override(template, ctx["contact_type"])
     if seg.get("subject"):
-        return _render_template(seg["subject"], ctx)
+        return _render_template(seg["subject"], ctx, mark_unknown=mark_unknown)
     if getattr(template, "subject", None):
-        return _render_template(template.subject, ctx)
+        return _render_template(template.subject, ctx, mark_unknown=mark_unknown)
     return template.purpose or campaign.name
+
+
+def _derive_salutation(extra: dict) -> str:
+    """Honorific for {{ salutation }}.
+
+    An explicit salutation column (mapped on upload → extra['salutation'])
+    always wins. When the contact has none, fall back to one inferred from a
+    gender/sex column if present, otherwise an empty string so
+    'Dear {{ salutation }} {{ name }}' still reads cleanly as 'Dear Kumar'.
+    Ms. (not Mrs.) is used for female contacts since marital status is unknown.
+    """
+    explicit = str(extra.get("salutation") or "").strip()
+    if explicit:
+        return explicit
+    gender = str(extra.get("gender") or extra.get("sex") or "").strip().lower()
+    if gender in ("m", "male"):
+        return "Mr."
+    if gender in ("f", "female"):
+        return "Ms."
+    return ""
 
 
 def _context(contact, campaign) -> dict:
     # Prefer the stored display name (from Excel "Contact Name" column or source).
     # Fall back to contact_ref (often the email address) only when no name was captured.
     display_name = getattr(contact, "name", None) or contact.contact_ref
+    name_parts = display_name.split() if display_name else []
+    extra = getattr(contact, "extra_json", None) or {}
     cid = str(campaign.id) if getattr(campaign, "id", None) else ""
     form_link = _build_form_link(contact.contact_ref, cid, contact) if cid else ""
     return {
         "name": display_name,
         "dealer_name": display_name,     # backward-compat alias
-        "first_name": display_name.split()[0] if display_name else "",
+        "first_name": name_parts[0] if name_parts else "",
+        # Everything after the first token — "Kumar" in "Rajesh Kumar",
+        # "Van Der Berg" in "Jan Van Der Berg". Empty for single-word names.
+        "last_name": " ".join(name_parts[1:]),
         "company": getattr(contact, "company", None) or "",
         "account_name": getattr(contact, "company", None) or "",  # alias — matches the Excel header
         # All other per-contact fields captured from the source (Excel columns
         # like Title/Role/Seniority/Department/Linkedin, normalised to lowercase
-        # keys) become template variables: {{ title }}, {{ role }}, etc.
-        **(getattr(contact, "extra_json", None) or {}),
+        # keys) become template variables: {{ title }}, {{ role }}, etc. An
+        # explicit first_name/last_name column here overrides the name split.
+        **extra,
+        # Resolved after **extra so an empty salutation cell falls back to the
+        # gender-derived default rather than rendering blank.
+        "salutation": _derive_salutation(extra),
         "campaign_name": campaign.name,
         "campaign_type": campaign.campaign_type,
         "contact_ref": contact.contact_ref,
@@ -229,6 +273,60 @@ def _build_unsubscribe_link(contact_ref: str, campaign_id: str) -> str:
     token = urllib.parse.quote(f"{token_data}:{sig}", safe="")
     base = settings.approval_base_url.rstrip("/")
     return f"{base}/campaigns/unsubscribe?t={token}"
+
+
+def _email_footer(unsub_url: str) -> str:
+    """Branded marketing footer appended to every campaign email (not to
+    transactional sends — those are notices, not bulk marketing).
+
+    Table-based + inline CSS so it renders in Outlook, mirroring the
+    social-row / wordmark / copyright / address / unsubscribe layout of a
+    polished bulk-mail footer. Appended AFTER click-tracking rewriting, so
+    these links stay direct — a footer or unsubscribe click is not counted as
+    a campaign 'click', and the opt-out link must never be tracked/redirected.
+
+    Only real, known-good links are included. To add more socials, copy the
+    '· <a>…</a>' pattern in the quick-links row with a real https URL.
+    """
+    year = datetime.now().year
+    gray, muted = "#6b7280", "#9ca3af"
+    logo = ("https://yexiselectronics.com/wp-content/uploads/2023/05/"
+            "cropped-cropped-logo-6-removebg-preview.png")
+    return (
+        '<br>'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+        '<tr><td align="center" style="padding:0 24px;">'
+        '<table role="presentation" width="600" cellpadding="0" cellspacing="0" '
+        'style="width:600px;max-width:600px;border-top:1px solid #e5e7eb;">'
+        # quick links / socials
+        '<tr><td align="center" style="padding:20px 24px 4px 24px;'
+        f'font-family:Arial,Helvetica,sans-serif;font-size:13px;color:{gray};">'
+        f'<a href="https://yexiselectronics.com/" style="color:{gray};text-decoration:none;">Website</a>'
+        ' &nbsp;&middot;&nbsp; '
+        '<a href="https://www.linkedin.com/company/yexiselectronics/home/" '
+        f'style="color:{gray};text-decoration:none;">LinkedIn</a>'
+        '</td></tr>'
+        # brand logo
+        '<tr><td align="center" style="padding:14px 24px 4px 24px;">'
+        f'<img src="{logo}" alt="Yexis Electronics" width="120" '
+        'style="display:block;border:0;outline:none;height:auto;" /></td></tr>'
+        # copyright + legal entity
+        '<tr><td align="center" style="padding:2px 24px;'
+        f'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:{muted};line-height:1.6;">'
+        f'&copy; {year} Yexis Electronics Business Solutions. All rights reserved.</td></tr>'
+        # address
+        '<tr><td align="center" style="padding:0 40px 2px 40px;'
+        f'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:{muted};line-height:1.6;">'
+        f'<a href="https://maps.app.goo.gl/8KgVmoL2MpUnHqr3A" style="color:{muted};text-decoration:none;">'
+        'No. 190-192, Offis Bay Realty Private Limited, 3rd Floor, Hamid Complex, '
+        'Anna Salai, Chennai - 600 006, Tamil Nadu, INDIA</a></td></tr>'
+        # unsubscribe
+        '<tr><td align="center" style="padding:12px 24px 24px 24px;'
+        f'font-family:Arial,Helvetica,sans-serif;font-size:12px;color:{muted};">'
+        f'To stop receiving these emails, <a href="{unsub_url}" style="color:{gray};">unsubscribe here</a>.'
+        '</td></tr>'
+        '</table></td></tr></table>'
+    )
 
 
 def _load_optouts(db) -> tuple[set[str], set[str]]:
@@ -301,17 +399,36 @@ def _open_tracking_pixel_tag(message_log_id: str, contact_ref: str, campaign_id:
 def _wrap_links_for_click_tracking(
     body_html: str, message_log_id: str, contact_ref: str, campaign_id: str,
 ) -> str:
-    """Rewrite every href="..." in the body through the click-tracking
-    redirect, preserving the original destination as a query param."""
+    """Rewrite every absolute http(s) href in the body through the
+    click-tracking redirect, preserving the original destination as a query
+    param.
+
+    Only absolute http(s):// links are wrapped. mailto:/tel:/#anchor links,
+    relative links, and anything that isn't a real URL (e.g. a stray
+    href="CompanyName") are left untouched — wrapping those produced a
+    redirect whose u= target then failed track_click's http(s) check with a
+    400 "Invalid redirect target".
+
+    Links that already point at our own /campaigns/track/click endpoint are
+    left alone too, so a tracking URL pasted into a template (or carried over
+    from an earlier send under a now-dead tunnel host) is never wrapped a
+    second time into a nested redirect-to-a-redirect.
+    """
+    import html as _html
     import re, urllib.parse
     from app.core.config import settings
     token = _build_tracking_token(message_log_id, contact_ref, campaign_id)
     base = settings.approval_base_url.rstrip("/")
 
     def _rewrite(match: "re.Match") -> str:
-        original_url = match.group(2)
-        if original_url.startswith(("mailto:", "tel:", "#")):
-            return match.group(0)
+        # The href may carry HTML entities (&amp; etc.) when the destination
+        # was authored/pasted as rendered HTML — decode first so the real URL
+        # is what we check and then re-encode.
+        original_url = _html.unescape(match.group(2))
+        if not original_url.lower().startswith(("http://", "https://")):
+            return match.group(0)  # not an absolute URL — leave it untouched
+        if "/campaigns/track/click" in original_url:
+            return match.group(0)  # already a tracking redirect — don't nest
         redirect = f"{base}/campaigns/track/click?t={token}&u={urllib.parse.quote(original_url, safe='')}"
         return f"{match.group(1)}{redirect}{match.group(3)}"
 
@@ -562,6 +679,78 @@ def _get_ab_template_id(campaign, variant: str, default_template_id: str) -> str
         if v.get("name") == variant:
             return v.get("template_id") or default_template_id
     return default_template_id
+
+
+# ── Content-correctness gate ──────────────────────────────────────────
+
+def _run_content_gate(db, template, campaign, sample_contact, payload) -> "AgentResult | None":
+    """Structural content gate — see app/services/campaign_lint.
+
+    Returns a VALIDATION_ERROR AgentResult to ABORT the send when the
+    template has a blocker-level problem (leaked {{tokens}}, a merge field
+    that renders blank, broken Jinja, a missing attachment, an empty body),
+    or None to let the send proceed.
+
+    When k3_proofread_gate_enabled is on, AI proofreading also blocks — but
+    only when a model provider is configured AND it returns spelling/grammar
+    issues; an unavailable checker never blocks.
+
+    An authorised caller may override any blocker by passing force=True AND a
+    non-empty override_reason — the override is logged with the blocker codes.
+    Disabled entirely by k3_content_gate_enabled=False.
+    """
+    from app.core.config import settings
+    if not getattr(settings, "k3_content_gate_enabled", True):
+        return None
+
+    from app.services.campaign_lint import lint_template, format_blockers
+    result = lint_template(template, sample_contact=sample_contact, campaign=campaign, db=db)
+
+    # AI proofread — spelling/grammar. Blocks only when it actually ran and
+    # found issues (cached by content hash so trickle ticks don't re-bill).
+    if getattr(settings, "k3_proofread_gate_enabled", True):
+        from app.services.campaign_proofread import proofread_cached
+        summary = result.get("summary") or {}
+        subj = summary.get("rendered_subject") or getattr(template, "subject", None) or ""
+        body = summary.get("rendered_body") or (template.body or "")
+        proof = proofread_cached(subj, body)
+        result["proofread"] = proof
+        if proof.get("available") and proof.get("issues"):
+            result["ok"] = False
+            result["blockers"].append({
+                "code": "spelling_grammar",
+                "message": f"{len(proof['issues'])} spelling/grammar issue(s) found — "
+                           "fix them or override.",
+                "detail": [f"{i.get('text', '')} → {i.get('fix', '')}"
+                           for i in proof["issues"]],
+            })
+
+    if result["ok"]:
+        return None
+
+    if payload.get("force"):
+        reason = str(payload.get("override_reason") or "").strip()
+        if not reason:
+            return AgentResult(
+                status="VALIDATION_ERROR",
+                error="Content check failed and force=True was given without an "
+                      "override_reason. Provide override_reason explaining why it "
+                      "is safe to send.",
+                output={"content_check": result},
+            )
+        logger.warning(
+            "K3 content gate OVERRIDDEN by %s for template %s: %s | blockers=%s",
+            payload.get("requested_by") or "unknown",
+            getattr(template, "template_id", "?"), reason,
+            [b["code"] for b in result["blockers"]],
+        )
+        return None
+
+    return AgentResult(
+        status="VALIDATION_ERROR",
+        error="Content check failed — nothing was sent. " + format_blockers(result),
+        output={"content_check": result},
+    )
 
 
 # ── Agent ─────────────────────────────────────────────────────────────
@@ -869,6 +1058,12 @@ class K3Broadcast(BaseAgent):
             name=payload.get("campaign_name") or event_type,
             campaign_type=event_type,
         )
+
+        # Same content gate as broadcasts — a transactional notice that ships
+        # raw {{tokens}} or a missing attachment is just as wrong.
+        gate = _run_content_gate(db, template, campaign, contact, payload)
+        if gate is not None:
+            return gate
 
         log = MessageLog(
             direction="out",
@@ -1208,6 +1403,14 @@ class K3Broadcast(BaseAgent):
                 actions_taken=[],
             )
 
+        # Content gate — render the template against a real recipient and
+        # refuse to broadcast anything visibly broken. Blocks on leaked
+        # tokens, typo'd merge fields, broken Jinja, missing attachments or an
+        # empty body (override with force=True + override_reason).
+        gate = _run_content_gate(db, template, campaign, pending[0], payload)
+        if gate is not None:
+            return gate
+
         now = datetime.now(timezone.utc)
         counts: dict[str, int] = {ch: 0 for ch in VALID_CHANNELS}
         counts["failed"] = 0
@@ -1465,10 +1668,7 @@ class K3Broadcast(BaseAgent):
                     body_html, str(log.id), contact.contact_ref, str(campaign.id),
                 )
                 unsub = _build_unsubscribe_link(contact.contact_ref, str(campaign.id))
-                body_html += (
-                    f'<br><br><small>To stop receiving these emails, '
-                    f'<a href="{unsub}">click here to unsubscribe</a>.</small>'
-                )
+                body_html += _email_footer(unsub)
                 # Open-tracking pixel — last, so it never affects visible content.
                 body_html += _open_tracking_pixel_tag(str(log.id), contact.contact_ref, str(campaign.id))
                 subject = _resolve_subject(template, contact, campaign)

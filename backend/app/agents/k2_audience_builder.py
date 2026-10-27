@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from app.agents.base import BaseAgent, AgentResult
 
 VALID_ACTIONS = {"build", "enrich", "report", "clear"}
-VALID_SOURCES = {"dealermart", "zoho_books", "zoho_crm", "apollo", "excel", "crm_accounts", "all"}
+VALID_SOURCES = {"dealermart", "zoho_books", "zoho_crm", "apollo", "rocketreach", "excel", "crm_accounts", "justdial", "scribd", "google_drive", "all"}
 VALID_ENTITIES = {"YEXIS-EL", "YEXIS-SL", "YEXIS-SOL"}
 VALID_ENRICHERS = {"rocketreach", "apollo", "both"}
 
@@ -174,14 +174,110 @@ def _fetch_dealermart(db, branch: str | None, min_score: float | None) -> tuple[
         return [], str(exc)
 
 
+def _unwrap_mcp_records(resp: dict, collection: str) -> tuple[list[dict], dict]:
+    """Extract a record page and pagination metadata from an MCP tool result."""
+    import json as _json
+
+    result = resp.get("result", resp)
+    if not isinstance(result, dict):
+        raise RuntimeError("Unexpected Zoho MCP result")
+    if result.get("isError"):
+        content = result.get("content") or []
+        detail = content[0].get("text", "MCP tool call failed") if content else "MCP tool call failed"
+        raise RuntimeError(detail)
+
+    payload = result.get("structuredContent")
+    if not isinstance(payload, dict):
+        content = result.get("content")
+        if isinstance(content, list) and content and content[0].get("text"):
+            try:
+                payload = _json.loads(content[0]["text"])
+            except (ValueError, TypeError) as exc:
+                raise RuntimeError("Could not parse Zoho MCP tool response") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Unrecognised Zoho MCP response shape: keys={list(result.keys())}")
+
+    payload = payload.get("data", payload)
+    if isinstance(payload, list):
+        return payload, {}
+    if not isinstance(payload, dict):
+        raise RuntimeError("Zoho MCP response did not contain a record list")
+
+    rows = payload.get("data")
+    if rows is None:
+        rows = payload.get(collection) or []
+    if not isinstance(rows, list):
+        raise RuntimeError("Zoho MCP response record field was not a list")
+    return rows, payload.get("info") or payload.get("page_context") or {}
+
+
+def _mcp_list_records(
+    server: str,
+    tool_name: str,
+    collection: str,
+    query_params: dict,
+    page_size: int = 200,
+) -> list[dict]:
+    """Read all pages from a named Zoho MCP list tool."""
+    from app.integrations.zoho_mcp_client import get_zoho_mcp_client
+
+    client = get_zoho_mcp_client(server)
+    tools = client.list_tools()
+    if not any(tool.get("name") == tool_name for tool in tools):
+        raise RuntimeError(f"{server} Zoho MCP server does not expose {tool_name}")
+
+    rows: list[dict] = []
+    page = 1
+    page_token = None
+    while len(rows) < 50_000:
+        params = {**query_params, "per_page": page_size}
+        if page_token:
+            params["page_token"] = page_token
+        else:
+            params["page"] = page
+        response = client.call_tool(tool_name, {"query_params": params})
+        batch, info = _unwrap_mcp_records(response, collection)
+        if not batch:
+            break
+        rows.extend(batch)
+        if not (info.get("more_records") or info.get("has_more_page")):
+            break
+        page_token = info.get("next_page_token")
+        if not page_token:
+            page += 1
+    return rows[:50_000]
+
+
+def _mcp_fetch_books_customers() -> list[dict]:
+    """Pull customer contacts from the Zoho Books MCP server."""
+    from app.core.config import settings
+
+    organization_id = settings.zoho_org_id
+    if not organization_id:
+        raise RuntimeError("ZOHO_ORG_ID is required for Zoho Books MCP customer listing")
+    return _mcp_list_records(
+        "YEXIS",
+        "ZohoBooks_list_contacts",
+        "contacts",
+        {"organization_id": organization_id, "contact_type": "customer"},
+    )
+
+
 def _fetch_zoho_books(page_limit: int = 5) -> tuple[list[dict], str | None]:
-    """Pull customers from Zoho Books."""
+    """Pull Zoho Books customers through MCP first, then fall back to REST."""
     try:
         from app.integrations.zoho_books import get_zoho_client
         client = get_zoho_client()
-        if not client.configured:
-            return [], "Zoho Books not configured"
-        raw = client.list_contacts(contact_type="customer")
+        raw = None
+        try:
+            raw = _mcp_fetch_books_customers()
+            logger.info("Zoho Books customers via MCP: %d records", len(raw))
+        except Exception as exc:
+            logger.warning("Zoho Books MCP fetch failed, falling back to REST: %s", exc)
+        if raw is None:
+            if not client.configured:
+                return [], "Zoho Books not configured (MCP customer listing unavailable)"
+            raw = client.list_contacts(contact_type="customer")
         contacts = []
         for c in raw:
             cid = c.get("contact_id") or c.get("contact_name", "")
@@ -196,17 +292,60 @@ def _fetch_zoho_books(page_limit: int = 5) -> tuple[list[dict], str | None]:
         return [], str(exc)
 
 
+def _mcp_fetch_accounts() -> list[dict]:
+    """Pull every CRM Account via the Zoho MCP server (ZohoCRM_getAccountsRecords),
+    paginating with page/per_page and Zoho's page_token for results beyond 2000.
+
+    The MCP response is wrapped in JSON-RPC; the CRM payload surfaces either as
+    structuredContent.data or as JSON text in content[0].text. Raises on any
+    failure so the caller can fall back to REST.
+    """
+    fields = "Account_Name,Phone,Email,Billing_City,Billing_State,Website"
+    return _mcp_list_records(
+        "AGENT",
+        "ZohoCRM_getAccountsRecords",
+        "accounts",
+        {"fields": fields},
+    )
+
+
+def _mcp_fetch_contacts() -> list[dict]:
+    """Pull CRM Contacts via MCP when the server exposes a list tool."""
+    fields = "Full_Name,First_Name,Last_Name,Phone,Mobile,Email,Account_Name"
+    return _mcp_list_records(
+        "AGENT",
+        "ZohoCRM_getContactsRecords",
+        "contacts",
+        {"fields": fields},
+    )
+
+
 def _fetch_zoho_crm() -> tuple[list[dict], str | None]:
-    """Pull accounts + contacts from Zoho CRM."""
+    """Pull accounts + contacts from Zoho CRM.
+
+    MCP is tried first for both record types, with the REST client used when a
+    MCP tool is unavailable or fails.
+    """
     try:
+        from app.core.config import settings
         from app.integrations.zoho_crm import get_zoho_crm_client, ZohoCrmError
         client = get_zoho_crm_client()
-        if not client.configured:
-            return [], "Zoho CRM not configured"
         contacts = []
-        # Accounts (companies / dealer businesses)
+        errors = []
+
+        accounts = None
+        if settings.k2_zoho_mcp_enabled:
+            try:
+                accounts = _mcp_fetch_accounts()
+                logger.info("CRM accounts via MCP: %d records", len(accounts))
+            except Exception as exc:
+                logger.warning("MCP accounts fetch failed, falling back to REST: %s", exc)
+                accounts = None
         try:
-            accounts = client.list_accounts()
+            if accounts is None:
+                if not client.configured:
+                    raise ZohoCrmError(0, "Zoho CRM REST fallback is not configured")
+                accounts = client.list_all_accounts()
             for a in accounts:
                 aid = a.get("id") or a.get("Account_Name", "")
                 contacts.append({
@@ -214,12 +353,22 @@ def _fetch_zoho_crm() -> tuple[list[dict], str | None]:
                     "msisdn": _normalise_phone(a.get("Phone")),
                     "email": a.get("Email"),
                 })
-        except ZohoCrmError as exc:
+        except Exception as exc:
+            errors.append(f"accounts: {exc}")
             logger.warning("CRM accounts fetch failed: %s", exc)
 
-        # Contacts (individual people at those accounts)
+        people = None
+        if settings.k2_zoho_mcp_enabled:
+            try:
+                people = _mcp_fetch_contacts()
+                logger.info("CRM contacts via MCP: %d records", len(people))
+            except Exception as exc:
+                logger.warning("MCP contacts fetch failed, falling back to REST: %s", exc)
         try:
-            people = client.list_contacts()
+            if people is None:
+                if not client.configured:
+                    raise ZohoCrmError(0, "Zoho CRM REST fallback is not configured")
+                people = client.list_all_contacts()
             for p in people:
                 pid = p.get("id") or ""
                 contacts.append({
@@ -227,10 +376,11 @@ def _fetch_zoho_crm() -> tuple[list[dict], str | None]:
                     "msisdn": _normalise_phone(p.get("Mobile") or p.get("Phone")),
                     "email": p.get("Email"),
                 })
-        except ZohoCrmError as exc:
+        except Exception as exc:
+            errors.append(f"contacts: {exc}")
             logger.warning("CRM contacts fetch failed: %s", exc)
 
-        return contacts, None
+        return contacts, ("; ".join(errors) if errors and not contacts else None)
     except Exception as exc:
         logger.warning("Zoho CRM source error: %s", exc)
         return [], str(exc)
@@ -267,6 +417,288 @@ def _fetch_apollo(
         return [], str(exc)
 
 
+def _fetch_rocketreach(
+    name: str | None,
+    company: str | None,
+    location: str | None,
+    per_page: int,
+) -> tuple[list[dict], str | None]:
+    """Search new prospects via RocketReach.
+
+    Mirrors the Apollo source: each matched profile becomes one contact,
+    carrying title/location/linkedin into extra_json for template use.
+    """
+    try:
+        from app.core.config import settings
+        from app.integrations import rocketreach_client as rr
+        if not settings.rocketreach_api_key:
+            return [], "RocketReach not configured (set ROCKETREACH_API_KEY)"
+        people = rr.search_people(
+            name=name, company=company, location=location, page_size=per_page,
+        )
+        contacts = []
+        for p in people:
+            key = p.get("email") or p.get("linkedin_url") or p.get("name") or "unknown"
+            ref_safe = re.sub(r"[^a-zA-Z0-9_@.\-]", "_", str(key))
+            extra = {
+                k: v for k, v in (
+                    ("title", p.get("title")),
+                    ("location", p.get("location")),
+                    ("linkedin_url", p.get("linkedin_url")),
+                ) if v
+            }
+            contacts.append({
+                "contact_ref": f"rocketreach_{ref_safe}",
+                "msisdn": _normalise_phone(p.get("phone")),
+                "email": p.get("email"),
+                "name": p.get("name") or None,
+                "company": p.get("company") or None,
+                "contact_type": "lead",
+                "extra": extra or None,
+            })
+        return contacts, None
+    except Exception as exc:
+        logger.warning("RocketReach source error: %s", exc)
+        return [], str(exc)
+
+
+def _fetch_justdial(payload: dict) -> tuple[list[dict], str | None]:
+    """Search JustDial's official partner API for business contacts.
+
+    Filters: keywords, location/city, category/industry, per_page. Each listing
+    with a usable phone or email becomes one contact; city/category ride along
+    in extra_json for template use.
+    """
+    try:
+        from app.integrations import justdial_client as jd
+        businesses = jd.search_businesses(
+            keywords=payload.get("keywords"),
+            city=payload.get("location") or payload.get("city"),
+            category=payload.get("category") or payload.get("industry"),
+            limit=int(payload.get("per_page", 50)),
+        )
+    except Exception as exc:
+        logger.warning("JustDial source error: %s", exc)
+        return [], str(exc)
+
+    contacts = []
+    for b in businesses:
+        phone = _normalise_phone(b.get("phone"))
+        email = (b.get("email") or "").strip().lower() or None
+        if not phone and not email:
+            continue
+        key = email or phone
+        ref_safe = re.sub(r"[^a-zA-Z0-9_@.\-]", "_", str(key))
+        extra = {
+            k: v for k, v in (("city", b.get("city")), ("category", b.get("category"))) if v
+        }
+        contacts.append({
+            "contact_ref": f"justdial_{ref_safe}",
+            "msisdn": phone,
+            "email": email,
+            "name": b.get("name") or None,
+            "company": b.get("company") or None,
+            "contact_type": "lead",
+            "extra": extra or None,
+        })
+    return contacts, None
+
+
+def _extract_pdf_contacts(file_path: str, ref_prefix: str = "doc") -> tuple[list[dict], str | None]:
+    """Heuristically pull contacts from a PDF's text layer. Each line holding an
+    email and/or a phone becomes one contact; the line's alphabetic words
+    (minus the email) are used as a best-guess name. Scanned/image-only PDFs
+    have no text layer and yield nothing."""
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return [], "pypdf not installed — cannot parse PDF contact documents"
+    try:
+        reader = PdfReader(file_path)
+        text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    except Exception as exc:
+        return [], f"Could not read PDF: {exc}"
+
+    email_re = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+    contacts: list[dict] = []
+    seen: set[str] = set()
+    for line in text.splitlines():
+        emails = email_re.findall(line)
+        email = emails[0].lower() if emails else None
+        phone = None
+        for run in re.findall(r"\+?\d[\d\-\s]{8,}\d", line):
+            p = _normalise_phone(run)
+            if p:
+                phone = p
+                break
+        if not email and not phone:
+            continue
+        ref_base = email or phone
+        if ref_base in seen:
+            continue
+        seen.add(ref_base)
+        name_guess = " ".join(
+            w for w in email_re.sub("", line).split() if any(ch.isalpha() for ch in w)
+        )[:120].strip() or None
+        ref_safe = re.sub(r"[^a-zA-Z0-9_@.\-]", "_", ref_base)
+        contacts.append({
+            "contact_ref": f"{ref_prefix}_{ref_safe}",
+            "msisdn": phone,
+            "email": email,
+            "name": name_guess,
+            "contact_type": "lead",
+        })
+    return contacts, (None if contacts else "No emails or phone numbers found in the PDF text layer")
+
+
+def _suffix_from_name(name: str | None) -> str:
+    low = (name or "").lower()
+    if low.endswith(".csv"):
+        return ".csv"
+    if low.endswith(".xls"):
+        return ".xls"
+    return ".xlsx"
+
+
+def _fetch_scribd(payload: dict) -> tuple[list[dict], str | None]:
+    """Download a contact document from Scribd (or any reachable URL) and parse
+    it. PDFs go through the text extractor; Excel/CSV through the normal
+    spreadsheet parser."""
+    import os as _os
+    import tempfile
+
+    url = payload.get("document_url") or payload.get("url")
+    if not url:
+        return [], "source=scribd needs a 'document_url'"
+    try:
+        from app.integrations import scribd_client as sc
+        content, suffix = sc.fetch_document(url)
+    except Exception as exc:
+        logger.warning("Scribd source error: %s", exc)
+        return [], str(exc)
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        tmp.write(content)
+        tmp.close()
+        if suffix == ".pdf":
+            return _extract_pdf_contacts(tmp.name, ref_prefix="scribd")
+        return _fetch_excel(tmp.name)
+    finally:
+        _os.unlink(tmp.name)
+
+
+def _drive_collect_and_parse(
+    payload: dict, *, resolve_link, list_files, download_file,
+) -> tuple[list[dict], str | None]:
+    """Shared Drive import logic. Resolves the set of file ids to import
+    (file_id / drive_link / folder_id, or the default folder), downloads each
+    spreadsheet, and parses it through the normal spreadsheet path. The three
+    callables abstract over the transport, so the service-account REST client
+    and the MCP client share one implementation."""
+    import os as _os
+    import tempfile
+
+    errors: list[str] = []
+    file_ids: list[str] = []
+
+    link = payload.get("drive_link") or payload.get("drive_url")
+    fid = payload.get("file_id") or (resolve_link(link) if link else None)
+    if fid:
+        file_ids.append(fid)
+    elif link:
+        errors.append(f"Could not extract a Drive file id from link: {link}")
+
+    folder = payload.get("folder_id")
+    if folder or not file_ids:
+        try:
+            file_ids.extend(f["id"] for f in list_files(folder))
+        except Exception as exc:
+            errors.append(str(exc))
+
+    # De-dupe while preserving order.
+    file_ids = list(dict.fromkeys(file_ids))
+    if not file_ids:
+        return [], "; ".join(errors) or (
+            "No Drive spreadsheet specified — provide file_id, drive_link, or folder_id"
+        )
+
+    all_contacts: list[dict] = []
+    for fid in file_ids:
+        try:
+            content, name = download_file(fid)
+        except Exception as exc:
+            errors.append(f"{fid}: {exc}")
+            continue
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=_suffix_from_name(name))
+        try:
+            tmp.write(content)
+            tmp.close()
+            rows, err = _fetch_excel(tmp.name)
+            if err and not rows:
+                errors.append(f"{name}: {err}")
+            all_contacts.extend(rows)
+        finally:
+            _os.unlink(tmp.name)
+
+    return all_contacts, ("; ".join(errors) if errors else None)
+
+
+def _fetch_google_drive_mcp(payload: dict) -> tuple[list[dict], str | None]:
+    """Google Drive import via an MCP server (Streamable HTTP). Mirrors the REST
+    path but routes file discovery and download through google_drive_mcp_client.
+    The link->id parser is reused from the REST client."""
+    try:
+        from app.integrations import google_drive_mcp_client as gd_mcp
+        from app.integrations.google_drive_client import resolve_link
+        client = gd_mcp.get_client()
+    except Exception as exc:
+        logger.warning("Google Drive MCP source error: %s", exc)
+        return [], str(exc)
+
+    return _drive_collect_and_parse(
+        payload,
+        resolve_link=resolve_link,
+        list_files=lambda folder: client.search_files(folder_id=folder),
+        download_file=client.download_file,
+    )
+
+
+def _fetch_google_drive(payload: dict) -> tuple[list[dict], str | None]:
+    """Pull contact spreadsheets from Google Drive. Supports three modes:
+      - a single file_id
+      - a shared drive_link (file id extracted from the URL)
+      - a folder_id (every spreadsheet in the folder is imported)
+    With none given, the default folder (settings.google_drive_folder_id) is used.
+    Google Sheets are exported to .xlsx; all files run through the spreadsheet parser.
+
+    Transport: when settings.google_drive_mcp_server_url is set, the Drive MCP
+    server is tried first; if it yields nothing usable (e.g. a server that needs
+    interactive OAuth returns 401) the service-account REST client takes over.
+    Otherwise the REST client is used directly."""
+    from app.core.config import settings
+
+    if settings.google_drive_mcp_server_url:
+        rows, err = _fetch_google_drive_mcp(payload)
+        # Fall back only when MCP produced nothing usable — a successful MCP
+        # import with per-file errors is returned as-is.
+        if rows or not err:
+            return rows, err
+        logger.warning("Drive MCP returned nothing, falling back to REST client: %s", err)
+
+    try:
+        from app.integrations import google_drive_client as gd
+    except Exception as exc:
+        return [], str(exc)
+
+    return _drive_collect_and_parse(
+        payload,
+        resolve_link=gd.resolve_link,
+        list_files=gd.list_spreadsheets,
+        download_file=gd.download_file,
+    )
+
+
 # ── Excel/CSV column mapping ──────────────────────────────────────────
 #
 # Two ways to turn a spreadsheet into contacts:
@@ -284,13 +716,14 @@ def _fetch_apollo(
 # vars (email_3, phone_3, …) so nothing an operator mapped is silently lost.
 
 # Standard targets that are NOT free-form custom variable names.
-_STD_TARGETS = {"name", "first_name", "email", "phone", "company", "ignore"}
+_STD_TARGETS = {"name", "first_name", "salutation", "email", "phone", "company", "ignore"}
 
 _NAME_COLS    = {
     "name", "contact_name", "full_name", "contact", "contact_person",
     "person_name", "client_name", "customer_name",
 }
 _FIRST_COLS   = {"first_name", "firstname", "first", "given_name"}
+_SALUTATION_COLS = {"salutation", "honorific", "title_prefix", "prefix"}
 _EMAIL_COLS   = {
     "email", "email_address", "e_mail", "mail", "alternate_email",
     "alt_email", "secondary_email", "contact_email", "email_id",
@@ -324,6 +757,8 @@ def _guess_target(normalized_header: str) -> str:
         return "name"
     if h in _FIRST_COLS:
         return "first_name"
+    if h in _SALUTATION_COLS:
+        return "salutation"
     if h in _EMAIL_COLS:
         return "email"
     if h in _PHONE_COLS:
@@ -524,6 +959,7 @@ def _fetch_excel(
 
     name_cols    = [i for i, t in resolved.items() if t == "name"]
     first_cols   = [i for i, t in resolved.items() if t == "first_name"]
+    salutation_cols = [i for i, t in resolved.items() if t == "salutation"]
     email_cols   = sorted(i for i, t in resolved.items() if t == "email")
     phone_cols   = sorted(i for i, t in resolved.items() if t == "phone")
     company_cols = [i for i, t in resolved.items() if t == "company"]
@@ -583,6 +1019,9 @@ def _fetch_excel(
         fn = _first(first_cols)
         if fn:
             extra["first_name"] = fn
+        salutation = _first(salutation_cols)
+        if salutation:
+            extra["salutation"] = salutation
         for i, t in custom_cols:
             v = _cell(i)
             if v:
@@ -649,6 +1088,18 @@ class K2AudienceBuilder(BaseAgent):
                 return f"source must be one of {sorted(VALID_SOURCES)}"
             if src == "excel" and not payload.get("file_path"):
                 return "'file_path' is required when source is 'excel'"
+            if src == "scribd" and not (payload.get("document_url") or payload.get("url")):
+                return "'document_url' is required when source is 'scribd'"
+            if src == "google_drive":
+                from app.core.config import settings
+                if not (
+                    payload.get("file_id")
+                    or payload.get("drive_link")
+                    or payload.get("drive_url")
+                    or payload.get("folder_id")
+                    or settings.google_drive_folder_id
+                ):
+                    return "google_drive needs a 'file_id', 'drive_link', or 'folder_id'"
         if action == "enrich":
             enricher = payload.get("enricher", "rocketreach")
             if enricher not in VALID_ENRICHERS:
@@ -725,8 +1176,18 @@ class K2AudienceBuilder(BaseAgent):
                 rows, err = _fetch_zoho_crm()
             elif src == "apollo":
                 rows, err = _fetch_apollo(keywords, location, title, industry, per_page)
+            elif src == "rocketreach":
+                rows, err = _fetch_rocketreach(
+                    payload.get("name"), payload.get("company") or keywords, location, per_page,
+                )
             elif src == "excel":
                 rows, err = _fetch_excel(file_path or "")
+            elif src == "justdial":
+                rows, err = _fetch_justdial(payload)
+            elif src == "scribd":
+                rows, err = _fetch_scribd(payload)
+            elif src == "google_drive":
+                rows, err = _fetch_google_drive(payload)
             elif src == "crm_accounts":
                 rows, err = _fetch_crm_accounts(db, payload)
             else:

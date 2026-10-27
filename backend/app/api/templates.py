@@ -211,6 +211,59 @@ def preview_template(template_id: str, body: dict | None = None, db: Session = D
     }
 
 
+# ── validate (content-correctness check) ───────────────────────────────
+
+@router.post("/{template_id}/validate")
+def validate_template(template_id: str, body: dict | None = None, db: Session = Depends(get_db)):
+    """Run the content-correctness checks on a template before it is sent.
+
+    Structural lint (always): Jinja syntax, unknown/typo'd merge tokens,
+    leaked tokens, blank fields, missing attachments, empty body/subject,
+    suspicious links. These are what K3's send gate blocks on.
+
+    AI proofread (optional, body.proofread=true): spelling/grammar via the
+    configured model provider. Advisory only — never blocks a send.
+
+    Body (all optional):
+      { "proofread": true,
+        "campaign_id": "...",   # render against this campaign's data
+        "contact_ref": "..." }  # and this specific contact (else the first)
+
+    Returns: { template_id, lint: {...}, proofread: {...}|null }
+    """
+    from app.models.enterprise import Campaign, CampaignContact, TemplateRegistry
+    from app.services.campaign_lint import lint_template
+
+    body = body or {}
+    t = db.get(TemplateRegistry, template_id)
+    if not t:
+        raise HTTPException(404, f"Template '{template_id}' not found")
+
+    # Pick a sample contact + campaign so the body renders against real data.
+    sample_contact = campaign = None
+    campaign_id = body.get("campaign_id")
+    if campaign_id:
+        campaign = db.get(Campaign, campaign_id)
+        if campaign is not None:
+            q = db.query(CampaignContact).filter(CampaignContact.campaign_id == campaign.id)
+            ref = body.get("contact_ref")
+            if ref:
+                q = q.filter(CampaignContact.contact_ref == ref)
+            sample_contact = q.first()
+
+    lint = lint_template(t, sample_contact=sample_contact, campaign=campaign, db=db)
+
+    proofread = None
+    if body.get("proofread"):
+        from app.services.campaign_proofread import proofread as _proofread
+        # Prefer the rendered body/subject (what the customer actually sees).
+        rendered_body = (lint.get("summary") or {}).get("rendered_body") or t.body or ""
+        rendered_subject = (lint.get("summary") or {}).get("rendered_subject") or (t.subject or "")
+        proofread = _proofread(rendered_subject, rendered_body)
+
+    return {"template_id": template_id, "lint": lint, "proofread": proofread}
+
+
 # ── attachments ────────────────────────────────────────────────────────
 #
 # Attachments are shared across every recipient of the template (they are

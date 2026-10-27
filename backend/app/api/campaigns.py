@@ -275,6 +275,7 @@ async def preview_contacts_excel(
     preview["target_options"] = [
         {"value": "name", "label": "Full name"},
         {"value": "first_name", "label": "First name"},
+        {"value": "salutation", "label": "Salutation / title"},
         {"value": "email", "label": "Email"},
         {"value": "phone", "label": "Phone / mobile"},
         {"value": "company", "label": "Company / account"},
@@ -507,8 +508,10 @@ def send_test_email(campaign_id: str, body: dict, db: Session = Depends(get_db))
             "Add a real contact to the campaign audience before sending a test email.",
         )
 
-    body_html = k3._resolve_body(template, contact, campaign, db=db)
-    subject = "[TEST] " + k3._resolve_subject(template, contact, campaign)
+    # mark_unknown=True so a typo'd merge field shows as a loud «name?» marker
+    # in your own test inbox instead of a silent blank.
+    body_html = k3._resolve_body(template, contact, campaign, db=db, mark_unknown=True)
+    subject = "[TEST] " + k3._resolve_subject(template, contact, campaign, mark_unknown=True)
 
     try:
         k3._send_smtp_email(
@@ -763,7 +766,7 @@ def unsubscribe(t: str, db: Session = Depends(get_db)):
     if not existing:
         db.add(ContactOptOut(
             contact_ref=contact_ref,
-            opted_out_at=datetime.now(_tz.utc),
+            opted_out_at=datetime.datetime.now(_tz.utc),
             email=cc.email if cc else None,
             name=cc.name if cc else None,
             msisdn=cc.msisdn if cc else None,
@@ -779,7 +782,17 @@ def unsubscribe(t: str, db: Session = Depends(get_db)):
 
     db.commit()
     logger.info("Unsubscribe: contact %s opted out (campaign %s)", contact_ref, campaign_id)
-    return HTMLResponse(content=_unsub_page(contact_ref), status_code=200)
+    # Show a human-friendly identifier, not the internal ref. Prefer the email,
+    # then the name; only as a last resort strip the "<source>_" tag off the ref
+    # (e.g. "excel_lokeshkumar@adomita.com" -> "lokeshkumar@adomita.com").
+    display = (cc.email or cc.name) if cc else None
+    if not display:
+        display = (
+            contact_ref.split("_", 1)[1]
+            if "_" in contact_ref and "@" in contact_ref
+            else contact_ref
+        )
+    return HTMLResponse(content=_unsub_page(display), status_code=200)
 
 
 @router.post("/unsubscribe", response_class=HTMLResponse)
@@ -1021,27 +1034,50 @@ def delete_optout(contact_ref: str, db: Session = Depends(get_db)):
     return resubscribe(contact_ref, db)
 
 
-def _unsub_page(contact_ref: str) -> str:
+def _unsub_page(display: str) -> str:
+    year = datetime.datetime.now().year
     return f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Unsubscribed — Yexis Electronics</title>
+  <title>You're unsubscribed — Yexis Electronics</title>
   <style>
-    body {{ font-family: Arial, sans-serif; max-width: 480px; margin: 80px auto; text-align: center; color: #333; }}
-    h1 {{ color: #1a56db; }}
-    p {{ color: #666; line-height: 1.6; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+            font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;
+            background:linear-gradient(135deg,#1a56db 0%,#0b2a6b 100%); padding:24px; }}
+    .card {{ background:#fff; max-width:460px; width:100%; border-radius:20px; padding:44px 36px;
+             box-shadow:0 20px 60px rgba(0,0,0,.28); text-align:center; }}
+    .wave {{ font-size:58px; line-height:1; margin-bottom:6px; }}
+    h1 {{ color:#1a56db; font-size:23px; margin:10px 0 6px; }}
+    p {{ color:#4b5563; line-height:1.65; font-size:15px; margin:10px 0; }}
+    .email {{ display:inline-block; background:#eff6ff; color:#1a56db; font-weight:600;
+              padding:4px 12px; border-radius:999px; font-size:14px; word-break:break-all; }}
+    .divider {{ height:1px; background:#e5e7eb; margin:26px 0 18px; }}
+    .hint {{ font-size:13px; color:#9ca3af; }}
+    .links {{ margin-top:16px; }}
+    .links a {{ color:#1a56db; text-decoration:none; font-weight:600; margin:0 10px; font-size:13px; }}
+    .brand {{ margin-top:16px; font-size:12px; color:#b0b7c3; }}
   </style>
 </head>
 <body>
-  <h1>You've been unsubscribed</h1>
-  <p>We've removed <strong>{contact_ref}</strong> from our campaign list.<br>
-  You will no longer receive promotional messages from Yexis Electronics.</p>
-  <p style="margin-top:32px; font-size:12px; color:#aaa;">
-    If this was a mistake, please contact your Yexis representative to re-subscribe.
-  </p>
+  <div class="card">
+    <div class="wave">👋</div>
+    <h1>You're all set — no more promos</h1>
+    <p>We've quietly removed <span class="email">{display}</span> from our campaign list.
+       No more promotional emails from us. Pinky promise. 🤝</p>
+    <p class="hint">Sorry to see you go — but there's always a seat for you if you come back.</p>
+    <div class="divider"></div>
+    <p class="hint">Unsubscribed by mistake, or changed your mind?<br>
+       Just reach out to your Yexis representative and we'll welcome you back. 💙</p>
+    <div class="links">
+      <a href="https://yexiselectronics.com/">Website</a> ·
+      <a href="https://www.linkedin.com/company/yexiselectronics/home/">LinkedIn</a>
+    </div>
+    <div class="brand">© {year} Yexis Electronics · Chennai, India</div>
+  </div>
 </body>
 </html>
 """

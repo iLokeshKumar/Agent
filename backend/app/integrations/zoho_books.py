@@ -200,6 +200,10 @@ class ZohoBooksClient:
 
         self._refresh_access_token()
 
+    def ensure_authenticated(self):
+        """Ensure a valid access token before starting a multi-request operation."""
+        self._ensure_token()
+
     def _refresh_access_token(self):
         """Refresh the OAuth access token."""
         logger.info("Refreshing Zoho Books access token")
