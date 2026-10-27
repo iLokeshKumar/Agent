@@ -22,3 +22,6 @@ backend/config/zoho_tokens.json
 /backups/
 /campaign_phase0/
 /data/
+/ip.jpeg
+/ipconfig.jpeg
+/tally_config.jpeg
